@@ -1,0 +1,53 @@
+# Supabase CLI config for local development (`supabase start`).
+# Production settings (SMTP, OTP expiry, site URL) are set in the dashboard — see README.
+project_id = "thepool"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["https://thepool.today", "https://www.thepool.today"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+# §5.1: one-time link valid for 15 minutes
+otp_expiry = 900
+max_frequency = "1m0s"
+
+# Production sends through Resend. Fill the password from the RESEND_API_KEY secret.
+# [auth.email.smtp]
+# enabled = true
+# host = "smtp.resend.com"
+# port = 465
+# user = "resend"
+# pass = "env(RESEND_API_KEY)"
+# admin_email = "hello@thepool.today"
+# sender_name = "The Pool"
+
+[edge_runtime]
+enabled = true
+
+[functions.sync-fixtures]
+verify_jwt = false
+[functions.sync-live]
+verify_jwt = false
+[functions.send-notifications]
+verify_jwt = false

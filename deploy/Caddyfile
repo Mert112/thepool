@@ -1,0 +1,18 @@
+# The Pool — static site served by Caddy with automatic HTTPS.
+# Install at /etc/caddy/Caddyfile and run `sudo systemctl reload caddy`.
+thepool.today, www.thepool.today {
+    root * /var/www/thepool
+    encode gzip zstd
+    # single-page app: every path renders index.html and the app routes it
+    try_files {path} /index.html
+    file_server
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+    # long cache for hashed build assets, none for the shell
+    @assets path /assets/*
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+    header /index.html Cache-Control "no-cache"
+}
