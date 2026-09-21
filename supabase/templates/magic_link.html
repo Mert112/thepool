@@ -1,0 +1,27 @@
+<!-- The Pool — sign-in email. Used for both "Magic Link" and "Confirm signup" in Supabase Auth → Email Templates. -->
+<!doctype html>
+<html>
+<body style="margin:0;padding:0;background:#111110;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#111110;">
+    <tr><td align="center" style="padding:40px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#1a1a18;border:1px solid #33332e;border-radius:14px;">
+        <tr><td style="padding:36px 32px 8px 32px;">
+          <div style="font-family:Archivo,Arial,sans-serif;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#9b9b92;">Free to play · costly to be wrong</div>
+          <div style="font-family:Anton,Impact,'Arial Narrow Bold',sans-serif;font-size:44px;line-height:1;text-transform:uppercase;color:#f2f1ea;margin-top:10px;">The <span style="color:#d7ff3f;">Pool</span></div>
+        </td></tr>
+        <tr><td style="padding:16px 32px 8px 32px;font-family:Archivo,Arial,sans-serif;font-size:16px;line-height:1.5;color:#c9c8bf;">
+          Tap the button to sign in. No password, ever.
+        </td></tr>
+        <tr><td style="padding:20px 32px 8px 32px;">
+          <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#d7ff3f;color:#111110;font-family:Anton,Impact,'Arial Narrow Bold',sans-serif;font-size:18px;letter-spacing:0.03em;text-transform:uppercase;text-decoration:none;padding:14px 28px;border-radius:11px;">Sign me in</a>
+        </td></tr>
+        <tr><td style="padding:20px 32px 32px 32px;font-family:Archivo,Arial,sans-serif;font-size:13px;line-height:1.5;color:#6f6f68;">
+          The link is good for 15 minutes and works once. Open it on the device you want to play on.<br><br>
+          Didn't ask for this? Ignore it — nobody gets in without the link.
+        </td></tr>
+      </table>
+      <div style="font-family:Archivo,Arial,sans-serif;font-size:12px;color:#6f6f68;padding-top:18px;">thepool.today</div>
+    </td></tr>
+  </table>
+</body>
+</html>

@@ -19,8 +19,8 @@ port = 54323
 
 [auth]
 enabled = true
-site_url = "http://localhost:5173"
-additional_redirect_urls = ["https://thepool.today", "https://www.thepool.today"]
+site_url = "https://thepool.today"
+additional_redirect_urls = ["https://thepool.today", "https://www.thepool.today", "http://localhost:5173"]
 jwt_expiry = 3600
 enable_signup = true
 
@@ -51,3 +51,11 @@ verify_jwt = false
 verify_jwt = false
 [functions.send-notifications]
 verify_jwt = false
+
+[auth.email.template.magic_link]
+subject = "Your sign-in link for The Pool"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.confirmation]
+subject = "Your sign-in link for The Pool"
+content_path = "./supabase/templates/magic_link.html"
