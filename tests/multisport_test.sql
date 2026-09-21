@@ -179,20 +179,20 @@ do $$ begin
 end $$;
 
 -- --- MMA: a round-2 KO, a decision, a no contest -----------------------------------
-select play(:'A', 7000, '[{"call_type":"winner","team_id":7001},{"call_type":"distance","yes":false},{"call_type":"method","pick":"KO/TKO"},{"call_type":"round","pick":"2"}]');
-select play(:'B', 7000, '[{"call_type":"winner","team_id":7002},{"call_type":"distance","yes":true},{"call_type":"method","pick":"Decision"}]');
+select play(:'A', 7000, '[{"call_type":"winner","team_id":7001},{"call_type":"method","pick":"KO/TKO"},{"call_type":"round","pick":"2"}]');
+select play(:'B', 7000, '[{"call_type":"winner","team_id":7002},{"call_type":"method","pick":"Decision"}]');
 select finish(7000, 1, 0, '{"winner":"home","method":"KO/TKO","round":"2"}');
 select process_match_updates();
 do $$ begin
-  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 7000) = 1 + 2 + 4 + 7, 'Ana: the full KO call';
+  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 7000) = 1 + 4 + 7, 'Ana: the full KO call';
   assert pts('bbbbbbbb-0000-0000-0000-000000000002', 7000) = 0, 'Ben: nothing';
 end $$;
-select play(:'A', 7100, '[{"call_type":"distance","yes":true},{"call_type":"method","pick":"Decision"}]');
+select play(:'A', 7100, '[{"call_type":"method","pick":"Decision"}]');
 select play(:'B', 7100, '[{"call_type":"round","pick":"1"}]');
 select finish(7100, 0, 1, '{"winner":"away","method":"Decision","round":"3"}');
 select process_match_updates();
 do $$ begin
-  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 7100) = 2 + 4, 'Ana: distance + decision';
+  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 7100) = 4, 'Ana: the decision';
   assert res('bbbbbbbb-0000-0000-0000-000000000002', 7100, 'round') = 'miss', 'a decision misses every round';
 end $$;
 select play(:'A', 7200, '[{"call_type":"winner","team_id":7001},{"call_type":"method","pick":"Submission"},{"call_type":"round","pick":"5"}]');
@@ -224,12 +224,11 @@ do $$ declare u text := 'bbbbbbbb-0000-0000-0000-000000000002'; begin
   assert rejects(u, 2100, '[{"call_type":"winner","team_id":2001},{"call_type":"margin","team_id":2002,"pick":"1-5"}]', '%margin backs the other side%'), 'margin vs winner';
   assert rejects(u, 6200, '[{"call_type":"winner","team_id":6001},{"call_type":"sets","home_goals":0,"away_goals":2}]', '%other player winning%'), 'sets vs winner';
   assert rejects(u, 6200, '[{"call_type":"sets","home_goals":2,"away_goals":0},{"call_type":"distance","yes":true}]', '%goes the distance%'), 'straight sets vs distance';
-  assert rejects(u, 7300, '[{"call_type":"distance","yes":true},{"call_type":"method","pick":"KO/TKO"}]', '%goes the distance%'), 'KO vs distance';
-  assert rejects(u, 7300, '[{"call_type":"distance","yes":true},{"call_type":"round","pick":"2"}]', '%finishing round%'), 'round vs distance';
+  assert rejects(u, 7300, '[{"call_type":"distance","yes":true}]', '%not available%'), 'no distance call in MMA (0012)';
   assert rejects(u, 7300, '[{"call_type":"method","pick":"Decision"},{"call_type":"round","pick":"2"}]', '%decision has no finishing round%'), 'round vs decision';
   -- consistent combinations still go through
   assert not rejects(u, 8000, '[{"call_type":"winner","team_id":8001},{"call_type":"draw","yes":false},{"call_type":"score","home_goals":2,"away_goals":1}]', '%'), 'consistent football card';
-  assert not rejects(u, 7300, '[{"call_type":"distance","yes":false},{"call_type":"method","pick":"Submission"},{"call_type":"round","pick":"1"}]', '%'), 'consistent fight card';
+  assert not rejects(u, 7300, '[{"call_type":"method","pick":"Submission"},{"call_type":"round","pick":"1"}]', '%'), 'consistent fight card';
 end $$;
 
 -- removing every call withdraws the entry
