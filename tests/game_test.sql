@@ -131,7 +131,6 @@ select test_reset();
 -- --- Tobias fills the same card: simple-ish picks, boost on the draw --------------
 select test_as('22222222-2222-2222-2222-222222222222');
 select rpc_save_calls(:'card_id', '[
-  {"call_type":"winner","team_id":64},
   {"call_type":"draw","yes":true},
   {"call_type":"scorer","player_id":5},
   {"call_type":"yellow","player_id":7}
@@ -139,7 +138,7 @@ select rpc_save_calls(:'card_id', '[
 select rpc_set_boost(:'card_id', 'draw');
 -- before lock Tobias cannot see Mina's calls, nor her entry row, but can see she is playing
 do $$ begin
-  assert (select count(*) from calls) = 4, 'only own calls visible before lock';
+  assert (select count(*) from calls) = 3, 'only own calls visible before lock';
   assert (select count(*) from entries) = 1, 'only own entry visible before lock';
   assert (select count(*) from card_players(tv('card_id')::uuid)) = 2, 'both listed as playing';
 end $$;
@@ -162,7 +161,7 @@ do $$ begin
   exception when others then if sqlerrm not like '%locked%' then raise; end if; end;
   perform test_reset();
   perform test_as('22222222-2222-2222-2222-222222222222');
-  assert (select count(*) from calls) = 11, 'everyone''s calls visible after lock';
+  assert (select count(*) from calls) = 10, 'everyone''s calls visible after lock';
   assert (select count(*) from entries) = 2, 'everyone''s entries visible after lock';
   perform test_reset();
 end $$;
@@ -202,7 +201,7 @@ do $$ declare e uuid := tv('mina_entry')::uuid; t uuid; begin
   -- Mina: winner 1 + draw(no) 3 + score 8 + scorer 7 + assist 9 + yellow 6 + red 10×2 = 54
   assert (select points from entries where id = e) = 54, format('Mina points %s', (select points from entries where id = e));
   assert (select hits from entries where id = e) = 7, 'Mina 7 of 7';
-  -- Tobias: winner miss, draw(yes) miss (boost wasted, no downside), scorer Salah hit 7, yellow hit 6 = 13
+  -- Tobias: draw(yes) miss (boost wasted, no downside), scorer Salah hit 7, yellow hit 6 = 13
   assert (select points from entries where id = t) = 13, format('Tobias points %s', (select points from entries where id = t));
   assert (select result from calls where entry_id = t and call_type = 'draw') = 'miss', 'boosted miss costs nothing';
   assert (select points_awarded from calls where entry_id = t and call_type = 'draw') = 0, 'boosted miss = 0';

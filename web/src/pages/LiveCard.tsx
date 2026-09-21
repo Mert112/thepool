@@ -55,9 +55,9 @@ export default function LiveCard() {
     <div className="grid two">
       <div className="stack">
         <div className="panel">
-          <div className="eyebrow">{match.competition_name} · {card.crew_id ? card.crews?.name : "Open card"} · {live ? <span className="magenta">{liveClock(match)}</span> : settled ? (soccer ? "Full time" : "Final") : soccer ? "Locked · waiting for kick-off" : "Locked · waiting for the start"}</div>
+          <div className="eyebrow">{match.competition_name} · {card.crew_id ? card.crews?.name : "Open card"} · {live ? <span className="magenta"><span className="live-dot" />{liveClock(match)}</span> : settled ? (soccer ? "Full time" : "Final") : soccer ? "Locked · waiting for kick-off" : "Locked · waiting for the start"}</div>
           {match.event_name && <div className="tiny muted" style={{ marginTop: 4 }}>{match.event_name}</div>}
-          <div className="scoreline" style={{ margin: "10px 0" }}>{match.home_score ?? 0} – {match.away_score ?? 0}</div>
+          <div className="scoreline" key={`${match.home_score}-${match.away_score}`} style={{ margin: "10px 0" }}>{match.home_score ?? 0} – {match.away_score ?? 0}</div>
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span>{match.home_team}</span><span>{match.away_team}</span></div>
           {soccer && match.ft_home != null && match.duration && match.duration !== "REGULAR" && <div className="tiny muted" style={{ marginTop: 6 }}>After extra time / penalties: {match.ft_home}–{match.ft_away}. Calls settle on the 90-minute score above.</div>}
           {periods > 0 && match.sport !== "mma" && (

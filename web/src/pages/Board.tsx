@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getBoard, getCompetitions, getLiveCounts, getMarkets, getSports, openCard, getMyCrews, type BoardRow, type Market } from "../lib/api";
 import { useLoad, useNow } from "../lib/auth";
 import { liveClock, offered } from "../lib/calls";
 import { countdown, fmtDay, fmtTime, soon } from "../lib/format";
-import { Empty, ErrorBox, Modal, Spinner } from "../components/ui";
+import { Empty, ErrorBox, Modal } from "../components/ui";
 
 export default function Board() {
   const nav = useNavigate();
@@ -75,15 +75,15 @@ export default function Board() {
         <span className="hide-m">{phase === "upcoming" ? "Deadline" : ""}</span>
         <span></span>
       </div>
-      {loading && !board && <Spinner />}
+      {loading && !board && Array.from({ length: 6 }, (_, i) => <div key={i} className="skeleton" style={{ animationDelay: `${i * 90}ms` }} />)}
       {board && rows.length === 0 && <Empty>Nothing here{league !== "ALL" ? " for this competition" : ""}. {phase === "live" ? "No game is in play right now." : phase === "upcoming" ? "Games appear as soon as they are scheduled." : "Settled cards show up here after the final whistle."}</Empty>}
-      {rows.map((r) => {
+      {rows.map((r, i) => {
         const live = r.phase === "live", settled = r.phase === "settled";
         const mk = marketsOf(r.sport).filter((k) => offered(k, r));
         return (
-          <div className="board-row" key={r.match_id}>
+          <div className="board-row" key={r.match_id} style={{ "--i": i } as CSSProperties}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: live ? "var(--magenta)" : "var(--text)" }}>{live ? liveClock(r) : settled ? (r.sport === "soccer" ? "FT" : "Final") : fmtTime(r.utc_date)}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: live ? "var(--magenta)" : "var(--text)" }}>{live ? <><span className="live-dot" />{liveClock(r)}</> : settled ? (r.sport === "soccer" ? "FT" : "Final") : fmtTime(r.utc_date)}</div>
               <div className="tiny faint">{live ? "" : fmtDay(r.utc_date)}</div>
             </div>
             <div className="hide-m tiny muted" style={{ fontWeight: 700 }}>

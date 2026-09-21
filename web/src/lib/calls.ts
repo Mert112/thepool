@@ -36,3 +36,23 @@ export const squadOf = (squads: Player[], teamId: number) => squads.filter((p) =
 
 // the live status line for any sport
 export const liveClock = (m: BoardRow) => m.clock ?? (m.minute ? `${m.minute}'` : "Live");
+
+// Two calls that cannot both land (mirrors pool.call_conflict in 0011). A new pick replaces any call it clashes with.
+export function clashes(a: Call, b: Call, m: BoardRow): boolean {
+  const pair = (x: string, y: string) => (a.call_type === x && b.call_type === y ? [a, b] : b.call_type === x && a.call_type === y ? [b, a] : null);
+  const winnerOf = (h: number, aw: number) => (h > aw ? m.home_team_id : aw > h ? m.away_team_id : null);
+  let p;
+  if ((p = pair("winner", "draw"))) return p[1].yes === true;
+  if ((p = pair("score", "winner"))) return winnerOf(p[0].home_goals!, p[0].away_goals!) !== p[1].team_id;
+  if ((p = pair("score", "draw"))) return (p[0].home_goals === p[0].away_goals) !== p[1].yes;
+  if ((p = pair("score", "total"))) { const t = p[0].home_goals! + p[0].away_goals!, line = p[1].line ?? m.total_line ?? 0; return p[1].yes ? t < line : t > line; }
+  if ((p = pair("margin", "winner"))) return p[0].team_id !== p[1].team_id;
+  if ((p = pair("sets", "winner"))) return winnerOf(p[0].home_goals!, p[0].away_goals!) !== p[1].team_id;
+  if ((p = pair("sets", "distance"))) return (p[0].home_goals! + p[0].away_goals! === (m.best_of ?? 3)) !== p[1].yes;
+  if (m.sport === "mma") {
+    if ((p = pair("method", "distance"))) return (p[0].pick === "Decision") !== p[1].yes;
+    if ((p = pair("round", "distance"))) return p[1].yes === true;
+    if ((p = pair("round", "method"))) return p[1].pick === "Decision";
+  }
+  return false;
+}

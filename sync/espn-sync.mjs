@@ -205,25 +205,34 @@ function parseScoreboard(comp, sb) {
 // ---------------------------------------------------------------------------
 // Summary → player stats (US sports) or goals/cards (football)
 // ---------------------------------------------------------------------------
-const STAT = { basketball: ["pts", ["PTS"], null], american_football: ["td", ["TD"], /^(rushing|receiving)$/], baseball: ["hr", ["HR"], /^batting$/], hockey: ["g", ["G"], null] };
+// [stat, column, which tables count]. Baseball's tables are unnamed: batting is the one with at-bats
+// (pitching also has an HR column — home runs allowed — which must not count).
+const STAT = {
+  basketball: ["pts", ["PTS"], () => true],
+  american_football: ["td", ["TD"], (g) => /^(rushing|receiving)$/.test(g.name ?? "")],
+  baseball: ["hr", ["HR"], (g) => (g.labels ?? g.names ?? []).includes("AB")],
+  hockey: ["g", ["G"], () => true],
+};
 
+// every athlete with a line in any box-score table took part ('app'); the sport's stat comes from its tables
 function parseBox(sport, s, teamKey) {
   const [stat, labels, groups] = STAT[sport];
   const players = new Map(), values = new Map();
   for (const side of s?.boxscore?.players ?? []) {
     const tk = teamKey(side.team?.id);
     for (const g of side.statistics ?? []) {
-      if (groups && !groups.test(g.name ?? "")) continue;
-      const idx = (g.labels ?? g.names ?? []).findIndex((l) => labels.includes(l));
-      if (idx < 0) continue;
+      const counts = groups(g);
+      const idx = counts ? (g.labels ?? g.names ?? []).findIndex((l) => labels.includes(l)) : -1;
       for (const a of g.athletes ?? []) {
         const id = num(a.athlete?.id); if (!id || !a.stats?.length) continue;
         players.set(id, { id, name: a.athlete.displayName, position: a.athlete.position?.abbreviation ?? null, team_key: tk });
-        values.set(id, (values.get(id) ?? 0) + (num(a.stats[idx]) ?? 0));
+        if (!values.has(id)) values.set(id, 0);
+        if (idx >= 0) values.set(id, values.get(id) + (num(a.stats[idx]) ?? 0));
       }
     }
   }
-  return { players: [...players.values()], stats: [...values].map(([player_id, value]) => ({ player_id, stat, value })) };
+  const stats = [...values].flatMap(([player_id, value]) => [{ player_id, stat, value }, { player_id, stat: "app", value: 1 }]);
+  return { players: [...players.values()], stats, events: null };
 }
 
 function parseSoccerEvents(s, teamKey) {
@@ -241,7 +250,16 @@ function parseSoccerEvents(s, teamKey) {
     events.push({ provider_key: String(k.id), type, minute: t.minute, injury_time: t.injury, team_key: tk, player_id: scorer, player_name: p0?.athlete?.displayName ?? null,
       assist_player_id: assist, assist_name: assist ? p1.athlete.displayName : null, own_goal: own });
   }
-  return { players: [...players.values()], events };
+  // took part: started, or came off the bench
+  const stats = [];
+  for (const r of s?.rosters ?? []) {
+    const tk = teamKey(r.team?.id);
+    for (const p of r.roster ?? []) {
+      if (!(p.starter || p.subbedIn === true || p.subbedIn?.didSub)) continue;
+      const id = person(p, tk); if (id) stats.push({ player_id: id, stat: "app", value: 1 });
+    }
+  }
+  return { players: [...players.values()], events, stats };
 }
 
 // ---------------------------------------------------------------------------
@@ -321,10 +339,9 @@ async function main() {
     if (g.match.status === "FINISHED" && g.comp.sport !== "soccer" && parsed.stats.length === 0) { g.hold = true; return; }  // box score not up yet
     const prow = (p) => ({ id: p.id, name: p.name, position: p.position, team_id: teamId.get(p.team_key) ?? null, sport: g.comp.sport, updated_at: now.toISOString() });
     if (parsed.players.length) must(await db.from("players").upsert(parsed.players.map(prow), { onConflict: "id", ignoreDuplicates: g.comp.sport === "soccer" }), "players");
-    if (parsed.stats) {
-      if (parsed.stats.length) must(await db.from("player_stats").upsert(parsed.stats.map((x) => ({ match_id: id, ...x })), { onConflict: "match_id,player_id,stat" }), "player_stats");
-      g.digest = parsed.stats.map((x) => `${x.player_id}:${x.value}`).sort();
-    } else {
+    if (parsed.stats.length) must(await db.from("player_stats").upsert(parsed.stats.map((x) => ({ match_id: id, ...x })), { onConflict: "match_id,player_id,stat" }), "player_stats");
+    g.digest = parsed.stats.map((x) => `${x.player_id}:${x.stat}:${x.value}`).sort();
+    if (parsed.events) {
       const rows = parsed.events.map(({ team_key, ...e }) => ({ match_id: id, ...e, team_id: teamId.get(team_key) ?? null }));
       if (rows.length) must(await db.from("match_events").upsert(rows, { onConflict: "match_id,provider_key" }), "match_events");
       // a goal the provider withdrew (VAR) disappears from the feed: drop it here too
@@ -332,7 +349,7 @@ async function main() {
       let del = db.from("match_events").delete().eq("match_id", id);
       if (keep.length) del = del.not("provider_key", "in", `(${keep.map((k) => `"${k}"`).join(",")})`);
       must(await del, "match_events cleanup");
-      g.digest = rows.map((r) => `${r.provider_key}:${r.type}:${r.minute}:${r.player_id}:${r.assist_player_id}`).sort();
+      g.digest.push(...rows.map((r) => `${r.provider_key}:${r.type}:${r.minute}:${r.player_id}:${r.assist_player_id}`).sort());
     }
     summaries++;
   });
@@ -374,4 +391,6 @@ async function main() {
   log(`${full ? "full" : "live"} · ${jobs.length} scoreboards · ${rows.length} games · ${list.filter((g) => LIVE.has(g.match.status)).length} live · ${summaries} box scores · ${squads} squads · ${Date.now() - t0}ms`);
 }
 
-main().catch((e) => { log("sync failed:", e.message); process.exit(1); });
+export { parseBox, parseSoccerEvents, parseScoreboard };
+// importing for a parser check (THEPOOL_NO_MAIN=1) must not run a sync
+if (!process.env.THEPOOL_NO_MAIN) main().catch((e) => { log("sync failed:", e.message); process.exit(1); });

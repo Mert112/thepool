@@ -180,19 +180,20 @@ end $$;
 
 -- --- MMA: a round-2 KO, a decision, a no contest -----------------------------------
 select play(:'A', 7000, '[{"call_type":"winner","team_id":7001},{"call_type":"distance","yes":false},{"call_type":"method","pick":"KO/TKO"},{"call_type":"round","pick":"2"}]');
-select play(:'B', 7000, '[{"call_type":"winner","team_id":7002},{"call_type":"distance","yes":true},{"call_type":"method","pick":"Decision"},{"call_type":"round","pick":"3"}]');
+select play(:'B', 7000, '[{"call_type":"winner","team_id":7002},{"call_type":"distance","yes":true},{"call_type":"method","pick":"Decision"}]');
 select finish(7000, 1, 0, '{"winner":"home","method":"KO/TKO","round":"2"}');
 select process_match_updates();
 do $$ begin
   assert pts('aaaaaaaa-0000-0000-0000-000000000001', 7000) = 1 + 2 + 4 + 7, 'Ana: the full KO call';
   assert pts('bbbbbbbb-0000-0000-0000-000000000002', 7000) = 0, 'Ben: nothing';
 end $$;
-select play(:'A', 7100, '[{"call_type":"distance","yes":true},{"call_type":"method","pick":"Decision"},{"call_type":"round","pick":"1"}]');
+select play(:'A', 7100, '[{"call_type":"distance","yes":true},{"call_type":"method","pick":"Decision"}]');
+select play(:'B', 7100, '[{"call_type":"round","pick":"1"}]');
 select finish(7100, 0, 1, '{"winner":"away","method":"Decision","round":"3"}');
 select process_match_updates();
 do $$ begin
   assert pts('aaaaaaaa-0000-0000-0000-000000000001', 7100) = 2 + 4, 'Ana: distance + decision';
-  assert res('aaaaaaaa-0000-0000-0000-000000000001', 7100, 'round') = 'miss', 'a decision misses every round';
+  assert res('bbbbbbbb-0000-0000-0000-000000000002', 7100, 'round') = 'miss', 'a decision misses every round';
 end $$;
 select play(:'A', 7200, '[{"call_type":"winner","team_id":7001},{"call_type":"method","pick":"Submission"},{"call_type":"round","pick":"5"}]');
 select finish(7200, 0, 0, '{"winner":"none"}');
@@ -201,6 +202,58 @@ do $$ begin
   assert res('aaaaaaaa-0000-0000-0000-000000000001', 7200, 'winner') = 'void', 'no contest voids the winner';
   assert res('aaaaaaaa-0000-0000-0000-000000000001', 7200, 'method') = 'void', 'no contest voids the method';
   assert res('aaaaaaaa-0000-0000-0000-000000000001', 7200, 'round') = 'void', 'no contest voids the round';
+end $$;
+
+-- --- 0011: no hedging, non-runners void, empty card withdraws ------------------------
+insert into teams (id, name, sport) values (8001, 'Fiji', 'soccer'), (8002, 'Vanuatu', 'soccer');
+insert into players (id, team_id, name, sport) values (80011, 8001, 'Krishna', 'soccer'), (80012, 8001, 'Dunadamu', 'soccer');
+insert into matches (id, competition_code, sport, season, utc_date, status, home_team_id, away_team_id, total_line, best_of) values
+  (8000, 'FRI', 'soccer', '2026', now() + interval '2 hours', 'TIMED', 8001, 8002, 2.5, null),
+  (5100, 'NHL', 'hockey', '2026', now() + interval '2 hours', 'TIMED', 5001, 5002, 6.5, null),
+  (2100, 'NBA', 'basketball', '2026', now() + interval '2 hours', 'TIMED', 2001, 2002, 210.5, null),
+  (6200, 'ATP', 'tennis', '2026', now() + interval '2 hours', 'TIMED', 6001, 6002, null, 3),
+  (7300, 'UFC', 'mma', '2026', now() + interval '2 hours', 'TIMED', 7001, 7002, null, 3);
+do $$ declare u text := 'bbbbbbbb-0000-0000-0000-000000000002'; begin
+  assert rejects(u, 8000, '[{"call_type":"winner","team_id":8001},{"call_type":"draw","yes":true}]', '%winner and a draw%'), 'winner + draw yes is a hedge';
+  assert rejects(u, 8000, '[{"call_type":"score","home_goals":1,"away_goals":1},{"call_type":"winner","team_id":8002}]', '%level scoreline%'), 'level score + winner';
+  assert rejects(u, 8000, '[{"call_type":"score","home_goals":1,"away_goals":1},{"call_type":"draw","yes":false}]', '%Draw: no%'), 'level score + draw no';
+  assert rejects(u, 8000, '[{"call_type":"score","home_goals":2,"away_goals":1},{"call_type":"winner","team_id":8002}]', '%other side winning%'), 'score backs the other side';
+  assert rejects(u, 8000, '[{"call_type":"score","home_goals":2,"away_goals":1},{"call_type":"draw","yes":true}]', '%Draw: yes%'), 'score with a winner + draw yes';
+  assert rejects(u, 5100, '[{"call_type":"score","home_goals":5,"away_goals":2},{"call_type":"total","yes":false}]', '%over/under disagree%'), 'score vs under';
+  assert rejects(u, 5100, '[{"call_type":"score","home_goals":3,"away_goals":3}]', '%always has a winner%'), 'no level hockey score';
+  assert rejects(u, 2100, '[{"call_type":"winner","team_id":2001},{"call_type":"margin","team_id":2002,"pick":"1-5"}]', '%margin backs the other side%'), 'margin vs winner';
+  assert rejects(u, 6200, '[{"call_type":"winner","team_id":6001},{"call_type":"sets","home_goals":0,"away_goals":2}]', '%other player winning%'), 'sets vs winner';
+  assert rejects(u, 6200, '[{"call_type":"sets","home_goals":2,"away_goals":0},{"call_type":"distance","yes":true}]', '%goes the distance%'), 'straight sets vs distance';
+  assert rejects(u, 7300, '[{"call_type":"distance","yes":true},{"call_type":"method","pick":"KO/TKO"}]', '%goes the distance%'), 'KO vs distance';
+  assert rejects(u, 7300, '[{"call_type":"distance","yes":true},{"call_type":"round","pick":"2"}]', '%finishing round%'), 'round vs distance';
+  assert rejects(u, 7300, '[{"call_type":"method","pick":"Decision"},{"call_type":"round","pick":"2"}]', '%decision has no finishing round%'), 'round vs decision';
+  -- consistent combinations still go through
+  assert not rejects(u, 8000, '[{"call_type":"winner","team_id":8001},{"call_type":"draw","yes":false},{"call_type":"score","home_goals":2,"away_goals":1}]', '%'), 'consistent football card';
+  assert not rejects(u, 7300, '[{"call_type":"distance","yes":false},{"call_type":"method","pick":"Submission"},{"call_type":"round","pick":"1"}]', '%'), 'consistent fight card';
+end $$;
+
+-- removing every call withdraws the entry
+select play(:'A', 8000, '[{"call_type":"winner","team_id":8001}]');
+do $$ declare card uuid := (select id from cards where match_id = 8000 and crew_id is null); begin
+  assert (select count(*) from entries where card_id = card and user_id = 'aaaaaaaa-0000-0000-0000-000000000001') = 1, 'entry in';
+  perform test_as('aaaaaaaa-0000-0000-0000-000000000001');
+  assert rpc_save_calls(card, '[]') is null, 'empty save returns no entry';
+  perform test_reset();
+  assert (select count(*) from entries where card_id = card and user_id = 'aaaaaaaa-0000-0000-0000-000000000001') = 0, 'entry withdrawn';
+end $$;
+
+-- non-runners: Dunadamu never came on; Tatum sat out; with no lineup at all the old rule stands
+select play(:'A', 8000, '[{"call_type":"scorer","player_id":80012},{"call_type":"yellow","player_id":80011}]');
+select play(:'A', 2100, '[{"call_type":"top_scorer","player_id":20021}]');
+insert into player_stats values (8000, 80011, 'app', 1), (2100, 20011, 'pts', 30), (2100, 20011, 'app', 1), (2100, 20012, 'pts', 12), (2100, 20012, 'app', 1);
+select finish(8000, 1, 0);
+select finish(2100, 101, 99);
+select process_match_updates();
+do $$ begin
+  assert res('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'scorer') = 'void', 'unused sub: scorer void';
+  assert res('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'yellow') = 'miss', 'played, not booked: miss';
+  assert res('aaaaaaaa-0000-0000-0000-000000000001', 2100, 'top_scorer') = 'void', 'did not play: top scorer void';
+  assert res('aaaaaaaa-0000-0000-0000-000000000001', 3000, 'scorer') = 'hit', 'earlier settlement unaffected';
 end $$;
 
 -- --- the board carries sport fields; stickers per competition ------------------------

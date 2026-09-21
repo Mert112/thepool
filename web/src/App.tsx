@@ -27,6 +27,8 @@ export default function App() {
   }
   return (
     <Shell>
+      {/* keyed by path: each page animates in; the board's ?sport= filter does not re-trigger it */}
+      <div className="page" key={loc.pathname}>
       <Routes>
         <Route path="/" element={<Board />} />
         <Route path="/match/:id" element={<Match />} />
@@ -40,6 +42,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </div>
     </Shell>
   );
 }

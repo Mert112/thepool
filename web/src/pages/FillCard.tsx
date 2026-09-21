@@ -1,10 +1,10 @@
 // §5.4 Filling the card: all markets on one screen, a running slip, one boost.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getCard, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, saveCalls, setBoost, type Call, type CallType, type Market } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, soon } from "../lib/format";
-import { isPlayerMarket, offered, pickText as describe, setScores, teamName as nameOf } from "../lib/calls";
+import { clashes, isPlayerMarket, offered, pickText as describe, setScores, teamName as nameOf } from "../lib/calls";
 import { Bar, Empty, ErrorBox, Pips, Spinner } from "../components/ui";
 
 type Picks = Partial<Record<CallType, Call>>;
@@ -20,9 +20,10 @@ export default function FillCard() {
   const [boost, setBoostState] = useState<CallType | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const { data, error, loading } = useLoad(async () => {
+  const { data, error, loading, reload } = useLoad(async () => {
     const card = await getCard(id!);
     if (!card) throw new Error("This card does not exist or is not yours to see.");
     const match = await getMatch(card.match_id);
@@ -43,7 +44,22 @@ export default function FillCard() {
   }, [data]);
 
   const editable = data ? data.card.status === "open" && new Date(data.match.utc_date).getTime() > now : false;
-  const set = (k: CallType, v: Call | null) => { setSaved(false); setPicks((p) => { const n = { ...p }; if (v) n[k] = v; else delete n[k]; return n; }); if (!v && boost === k) setBoostState(null); };
+  // a new pick replaces any call it contradicts (the server refuses hedged cards), and says so
+  const set = (k: CallType, v: Call | null) => {
+    setSaved(false); setNotice(null);
+    const dropped: CallType[] = [];
+    const n = { ...picks };
+    if (v) {
+      n[k] = v;
+      for (const other of Object.values(n)) if (other && other.call_type !== k && clashes(v, other, data!.match)) { delete n[other.call_type]; dropped.push(other.call_type); }
+    } else delete n[k];
+    setPicks(n);
+    if (boost && (boost === k && !v || dropped.includes(boost))) setBoostState(null);
+    if (dropped.length) {
+      const titles = dropped.map((c) => `“${data!.markets.find((x) => x.call_type === c)?.title ?? c}”`).join(" and ");
+      setNotice(`Removed ${titles} — it can't land alongside this pick.`);
+    }
+  };
   const ptsOf = (k: Market) => k.points * (boost === k.call_type ? 2 : 1);
   const slip = useMemo(() => (data?.markets ?? []).filter((k) => picks[k.call_type]), [data, picks]);
   const total = slip.reduce((s, k) => s + ptsOf(k), 0);
@@ -54,8 +70,9 @@ export default function FillCard() {
     try {
       const calls = Object.values(picks).map((c) => ({ call_type: c.call_type, team_id: c.team_id ?? null, yes: c.yes ?? null, player_id: c.player_id ?? null, home_goals: c.home_goals ?? null, away_goals: c.away_goals ?? null, pick: c.pick ?? null }));
       await saveCalls(data.card.id, calls);
-      await setBoost(data.card.id, boost);
+      if (calls.length) await setBoost(data.card.id, boost);   // no calls: the entry is withdrawn, boost with it
       setSaved(true);
+      reload();
     } catch (e: any) { setErr(e.message); }
     setSaving(false);
   };
@@ -82,7 +99,7 @@ export default function FillCard() {
             {editable ? `Locks in ${countdown(match.utc_date, now)} · edit as often as you like until then` : "This card is locked."}
           </div>
 
-          {markets.map((k) => {
+          {markets.map((k, i) => {
             const cur = picks[k.call_type];
             const on = !!cur, boosted = boost === k.call_type;
             const sd = side[k.call_type] ?? "h";
@@ -90,10 +107,13 @@ export default function FillCard() {
             const squad = squads.filter((p) => p.team_id === teamId);
             const top = crowdFor(k.call_type)[0];
             return (
-              <div key={k.call_type} className={"market" + (on ? " on" : "")}>
+              <div key={k.call_type} className={"market" + (on ? " on" : "")} style={{ "--i": i } as CSSProperties}>
                 <div className="head">
                   <div><h3 className="display" style={{ margin: 0 }}>{k.title}</h3><div className="small muted">{k.description}</div></div>
-                  <div style={{ textAlign: "right" }}><div className="pts">{ptsOf(k)}</div><Pips n={Math.min(8, k.points)} /></div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="pts">{ptsOf(k)}</div><Pips n={Math.min(8, k.points)} />
+                    {on && editable && <button className="remove-call" onClick={() => set(k.call_type, null)}>Remove</button>}
+                  </div>
                 </div>
 
                 {k.call_type === "winner" && (
@@ -209,16 +229,19 @@ export default function FillCard() {
 
       <div className="slip">
         <div className="items">
-          {slip.length === 0 && <span className="muted small">No calls yet. Skipping a call only forfeits its points — a partial card is always valid.</span>}
+          {slip.length === 0 && <span className="muted small">{data!.entry ? "Every call removed — save to withdraw from this card." : "No calls yet. Skipping a call only forfeits its points — a partial card is always valid."}</span>}
           {slip.map((k) => <span className="item" key={k.call_type}>{k.title}: {pickText(picks[k.call_type]!)} <b>+{ptsOf(k)}</b>{editable && <button onClick={() => set(k.call_type, null)} title="Remove">×</button>}</span>)}
         </div>
-        <div className="total">{total}</div>
+        <div className="total" key={total}>{total}</div>
         {editable ? (
-          <button className="btn big" disabled={saving || slip.length === 0} onClick={save}>{saving ? "Saving…" : saved ? "Saved ✓" : data!.entry ? "Update my card" : "Lock in my card"}</button>
+          <button className="btn big" disabled={saving || (slip.length === 0 && !data!.entry)} onClick={save}>
+            {saving ? "Saving…" : saved ? "Saved ✓" : !data!.entry ? "Save my card" : slip.length ? "Update my card" : "Withdraw my card"}
+          </button>
         ) : (
           <button className="btn big" onClick={() => nav(`/card/${card.id}/live`)}>{card.status === "settled" ? "See the recap" : "Watch it live"}</button>
         )}
         <ErrorBox msg={err} />
+        {notice && <div className="notice">{notice}</div>}
       </div>
     </div>
   );

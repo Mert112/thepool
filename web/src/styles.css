@@ -199,3 +199,91 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 .periods span { text-align: center; color: var(--text-2); }
 .periods .h { color: var(--mute); font-size: 11px; font-weight: 700; }
 .periods .t { text-align: left; font-weight: 700; color: var(--text); }
+
+/* card page: remove a call, and the note when a new pick replaces a contradicting one */
+.remove-call { display: block; margin: 8px 0 0 auto; border: 0; background: transparent; padding: 2px 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); }
+.remove-call:hover { color: var(--magenta); }
+.notice { flex-basis: 100%; font-size: 13px; color: var(--text-2); background: var(--ink); border-left: 3px solid var(--magenta); border-radius: 6px; padding: 8px 12px; }
+
+/* ===========================================================================
+   Motion. Short, quick-settling easing; everything rests still and snaps off under reduced motion.
+   =========================================================================== */
+:root {
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --glow: 0 0 0 1px rgba(215, 255, 63, 0.35), 0 8px 30px -8px rgba(215, 255, 63, 0.35);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { 0% { transform: scale(0.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.18); color: var(--text); } 100% { transform: scale(1); } }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 69, 142, 0.55); } 70% { box-shadow: 0 0 0 7px rgba(255, 69, 142, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 69, 142, 0); } }
+@keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes sheen { from { transform: translateX(-120%) skewX(-18deg); } to { transform: translateX(220%) skewX(-18deg); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes slide-down { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+/* every page arrives rather than appears */
+.page { animation: rise 0.45s var(--ease) both; }
+
+/* interactive surfaces share one feel: colour eases, press gives, hover lifts a hair */
+.pill, .chip, .btn, .opt, .boost, .choice, .nav a, .stepper button, .remove-call, .ticker > div, .switch, .switch i, .input, .select, .textarea {
+  transition: background-color 0.18s var(--ease), border-color 0.18s var(--ease), color 0.18s var(--ease), transform 0.18s var(--ease), box-shadow 0.25s var(--ease);
+}
+.pill:hover:not(.on), .chip:hover:not(.on) { border-color: var(--soft); color: var(--text); }
+.nav a:hover:not(.on) { color: var(--text); background: var(--panel); }
+.btn:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--soft); }
+.btn.primary:hover:not(:disabled) { border-color: var(--lime); box-shadow: var(--glow); }
+.btn.big:hover:not(:disabled) { box-shadow: var(--glow); }
+.btn:active:not(:disabled), .pill:active, .chip:active, .opt:active:not(:disabled), .choice:active, .boost:active, .stepper button:active { transform: scale(0.96); }
+.opt:hover:not(:disabled):not(.on), .choice:hover:not(.on) { border-color: var(--text-2); }
+.opt.on { animation: pop 0.32s var(--spring); }
+.pill.on { box-shadow: 0 6px 20px -10px rgba(215, 255, 63, 0.6); }
+:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.input:focus, .select:focus, .textarea:focus { box-shadow: 0 0 0 4px rgba(215, 255, 63, 0.12); }
+
+/* the board: rows cascade in, lift on hover; live games pulse */
+.board-row:not(.board-head) { animation: rise 0.4s var(--ease) both; animation-delay: calc(min(var(--i, 0), 18) * 22ms); transition: background-color 0.2s var(--ease); border-radius: 10px; }
+.board-row:not(.board-head):hover { background: var(--panel-2); }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--magenta); margin-right: 7px; vertical-align: 2px; animation: pulse 1.6s infinite; }
+.live-n { animation: pop-in 0.3s var(--spring) both; }
+.ticker > div { animation: pop-in 0.35s var(--ease) both; }
+.ticker > div:hover { transform: translateY(-2px); background: var(--raise); }
+.ticker .min::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--magenta); margin-right: 6px; vertical-align: 2px; animation: pulse 1.6s infinite; }
+.skeleton { height: 54px; border-radius: 10px; margin: 8px 0; background: linear-gradient(90deg, var(--panel-2) 0%, var(--raise) 50%, var(--panel-2) 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+
+/* the card: markets cascade, a picked market glows, the slip reacts to every change */
+.market { animation: rise 0.45s var(--ease) both; animation-delay: calc(var(--i, 0) * 50ms); transition: border-color 0.25s var(--ease), background-color 0.25s var(--ease), box-shadow 0.3s var(--ease); }
+.market.on { box-shadow: var(--glow); }
+.market .pts { display: inline-block; }
+.market.on .pts { animation: bump 0.4s var(--spring); }
+.pips i { transition: background-color 0.2s var(--ease), border-color 0.2s var(--ease); }
+.slip { backdrop-filter: blur(10px); background: rgba(26, 26, 24, 0.92); }
+.slip .item { animation: pop-in 0.25s var(--spring) both; }
+.slip .total { display: inline-block; animation: bump 0.4s var(--spring); }
+.boost.on { position: relative; overflow: hidden; }
+.boost.on::after { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent); animation: sheen 2.4s var(--ease) infinite; }
+.notice { animation: slide-down 0.3s var(--ease) both; }
+.error { animation: slide-down 0.25s var(--ease) both; }
+
+/* dialogs */
+.modal-bg { animation: fade 0.2s var(--ease) both; backdrop-filter: blur(4px); }
+.modal { animation: pop-in 0.3s var(--spring) both; box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8); }
+
+/* live card and recap */
+.scoreline { display: inline-block; animation: bump 0.5s var(--spring); }
+.tag.hit, .tag.miss { animation: pop-in 0.3s var(--spring) both; }
+.brag { position: relative; overflow: hidden; animation: rise 0.5s var(--ease) 0.1s both; }
+.brag::after { content: ""; position: absolute; inset: 0; width: 35%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent); animation: sheen 1.4s var(--ease) 0.6s both; }
+.log { animation: rise 0.35s var(--ease) both; }
+.album .cell.on { animation: pop-in 0.35s var(--spring) both; }
+.panel { transition: border-color 0.25s var(--ease); }
+
+/* loading: a lime ring instead of plain text */
+.spinner { display: grid; place-items: center; gap: 12px; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+.spinner::before { content: ""; width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--raise); border-top-color: var(--lime); animation: spin 0.8s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important; }
+}
