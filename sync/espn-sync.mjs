@@ -33,6 +33,11 @@ const chunks = (xs, n) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i
 const hash = (x) => createHash("sha1").update(JSON.stringify(x)).digest("hex");
 const num = (x) => (x === undefined || x === null || x === "" || Number.isNaN(Number(x)) ? null : Number(x));
 const must = ({ data, error }, what) => { if (error) throw new Error(`${what}: ${error.message}`); return data; };
+// one row per key: a batch that names the same row twice is refused by ON CONFLICT (ESPN rosters can repeat a player)
+const uniq = (rows, key = (r) => r.id) => [...new Map(rows.map((r) => [key(r), r])).values()];
+const problems = [];
+// a failure in one game's box score or one team's squad is logged and skipped; the pass (and settlement) carries on
+async function isolate(what, fn) { try { return await fn(); } catch (e) { problems.push(`${what}: ${e.message}`); } }
 
 // ESPN groups a day's games by US Eastern date
 const etDate = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(d).replaceAll("-", "");
@@ -330,20 +335,21 @@ async function main() {
 
   // 4. box scores / events for played games in play or finishing, before their final status lands
   let summaries = 0;
-  await mapLimit(list.filter((g) => tracked.has(g.match.espn_key) && TEAM_SPORTS.has(g.comp.sport) && (LIVE.has(g.match.status) || g.match.status === "FINISHED")), 4, async (g) => {
+  await mapLimit(list.filter((g) => tracked.has(g.match.espn_key) && TEAM_SPORTS.has(g.comp.sport) && (LIVE.has(g.match.status) || g.match.status === "FINISHED")), 4, (g) => isolate(`box score ${g.match.espn_key}`, async () => {
+    g.hold = true;   // until this game's stats are safely written, it cannot go final
     const id = tracked.get(g.match.espn_key).id, espnId = g.match.espn_key.split(":").pop();
     const s = await espn(`${g.comp.espn_path}/summary`, `event=${espnId}`);
     const teamKey = (eid) => g.espnTeam[eid] ?? null;
-    if (!s) { g.hold = true; return; }
+    if (!s) return;
     const parsed = g.comp.sport === "soccer" ? parseSoccerEvents(s, teamKey) : parseBox(g.comp.sport, s, teamKey);
-    if (g.match.status === "FINISHED" && g.comp.sport !== "soccer" && parsed.stats.length === 0) { g.hold = true; return; }  // box score not up yet
+    if (g.match.status === "FINISHED" && g.comp.sport !== "soccer" && parsed.stats.length === 0) return;  // box score not up yet
     const prow = (p) => ({ id: p.id, name: p.name, position: p.position, team_id: teamId.get(p.team_key) ?? null, sport: g.comp.sport, updated_at: now.toISOString() });
-    if (parsed.players.length) must(await db.from("players").upsert(parsed.players.map(prow), { onConflict: "id", ignoreDuplicates: g.comp.sport === "soccer" }), "players");
-    if (parsed.stats.length) must(await db.from("player_stats").upsert(parsed.stats.map((x) => ({ match_id: id, ...x })), { onConflict: "match_id,player_id,stat" }), "player_stats");
+    if (parsed.players.length) must(await db.from("players").upsert(uniq(parsed.players).map(prow), { onConflict: "id", ignoreDuplicates: g.comp.sport === "soccer" }), "players");
+    if (parsed.stats.length) must(await db.from("player_stats").upsert(uniq(parsed.stats.map((x) => ({ match_id: id, ...x })), (x) => `${x.player_id}:${x.stat}`), { onConflict: "match_id,player_id,stat" }), "player_stats");
     g.digest = parsed.stats.map((x) => `${x.player_id}:${x.stat}:${x.value}`).sort();
     if (parsed.events) {
       const rows = parsed.events.map(({ team_key, ...e }) => ({ match_id: id, ...e, team_id: teamId.get(team_key) ?? null }));
-      if (rows.length) must(await db.from("match_events").upsert(rows, { onConflict: "match_id,provider_key" }), "match_events");
+      if (rows.length) must(await db.from("match_events").upsert(uniq(rows, (r) => r.provider_key), { onConflict: "match_id,provider_key" }), "match_events");
       // a goal the provider withdrew (VAR) disappears from the feed: drop it here too
       const keep = rows.map((r) => r.provider_key);
       let del = db.from("match_events").delete().eq("match_id", id);
@@ -351,8 +357,9 @@ async function main() {
       must(await del, "match_events cleanup");
       g.digest.push(...rows.map((r) => `${r.provider_key}:${r.type}:${r.minute}:${r.player_id}:${r.assist_player_id}`).sort());
     }
+    g.hold = false;
     summaries++;
-  });
+  }));
 
   // 5. matches
   const rows = [];
@@ -372,15 +379,15 @@ async function main() {
   // 6. squads for upcoming team-sport fixtures
   let squads = 0;
   const needs = must(await db.rpc("sync_roster_needs", { p_limit: full ? 40 : 12 }), "roster needs");
-  await mapLimit(needs, 4, async (n) => {
+  await mapLimit(needs, 4, (n) => isolate(`squad ${n.espn_key}`, async () => {
     const r = await espn(`${n.espn_path}/teams/${n.espn_key.split(":").pop()}/roster`);
     const flat = Array.isArray(r?.athletes?.[0]?.items) ? r.athletes.flatMap((g) => g.items ?? []) : r?.athletes ?? [];
     const players = flat.filter((a) => num(a.id)).map((a) => ({ id: num(a.id), team_id: n.team_id, name: a.displayName ?? a.fullName, position: a.position?.abbreviation ?? null,
       shirt: num(a.jersey), sport: byCode[Object.keys(byCode).find((k) => byCode[k].espn_path === n.espn_path)]?.sport ?? null, updated_at: now.toISOString() }));
-    for (const part of chunks(players, 300)) must(await db.from("players").upsert(part, { onConflict: "id" }), "roster");
+    for (const part of chunks(uniq(players), 300)) must(await db.from("players").upsert(part, { onConflict: "id" }), "roster");
     must(await db.from("teams").update({ roster_checked_at: now.toISOString() }).eq("id", n.team_id), "roster checked");
     squads += players.length ? 1 : 0;
-  });
+  }));
 
   // 7. lock, go live, settle
   must(await db.rpc("process_match_updates"), "settlement");
@@ -388,6 +395,7 @@ async function main() {
   if (full) state.lastFull = now.toISOString();
   state.lastRun = now.toISOString();
   saveState(state);
+  for (const p of problems) log("skipped", p);
   log(`${full ? "full" : "live"} · ${jobs.length} scoreboards · ${rows.length} games · ${list.filter((g) => LIVE.has(g.match.status)).length} live · ${summaries} box scores · ${squads} squads · ${Date.now() - t0}ms`);
 }
 
