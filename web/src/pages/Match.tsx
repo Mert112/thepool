@@ -42,9 +42,11 @@ export default function Match() {
           <div className="eyebrow">{match.sport_name} · {match.competition_name} · {fmtWhen(match.utc_date)}</div>
           {match.event_name && <div className="tiny muted" style={{ marginTop: 4 }}>{match.event_name}</div>}
           <h1 className="display" style={{ margin: "8px 0 14px" }}>{match.home_team} <span className="faint">v</span> {match.away_team}</h1>
-          {cards.length > 1 && (
+          {/* every card on this game, plus a public one if nobody has opened it yet (a crew card must not block it) */}
+          {(cards.length > 1 || (cards.length > 0 && upcoming && !cards.some((c) => c.crew_id === null))) && (
             <div className="row-of" style={{ marginBottom: 12 }}>
               {cards.map((c) => <button key={c.id} className={"pill" + (c.id === cardId ? " on" : "")} onClick={() => setSelected(c.id)}>{c.crew_id ? c.crews?.name : "Open card"}</button>)}
+              {upcoming && !cards.some((c) => c.crew_id === null) && <button className="pill" onClick={() => setCreatingFor(null)}>+ Card for everyone</button>}
             </div>
           )}
           {card ? (
