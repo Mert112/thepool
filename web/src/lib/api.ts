@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 
 export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "margin" | "top_scorer" | "sets" | "distance" | "method" | "round" | "spread" | "player_line";
 export type Sport = { code: string; name: string; sort_order: number };
-export type Market = { sport: string; options: string[] | null; default_price: number | null; call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
+export type Market = { sport: string; options: string[] | null; default_price: number | null; option_mult: Record<string, number> | null; call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
 export type BoardRow = {
   match_id: number; competition_code: string; competition_name: string; season: string | null; utc_date: string; status: string; minute: number | null;
   home_score: number | null; away_score: number | null; ft_home: number | null; ft_away: number | null; duration: string | null;

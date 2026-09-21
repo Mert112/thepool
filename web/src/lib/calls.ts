@@ -15,7 +15,7 @@ export function pickText(c: Call | undefined, m: BoardRow, playerName: (id: numb
     case "margin": return `${teamName(m, c.team_id)} by ${c.pick}`;
     case "method": return c.team_id ? `${teamName(m, c.team_id)} by ${c.pick}` : c.pick ?? "";
     case "round": return `Round ${c.pick}`;
-    default: return playerName(c.player_id) || "Player";
+    default: return `${playerName(c.player_id) || "Player"}${c.pick ? ` · ${c.pick}'` : ""}`;   // the red card's time window
   }
 }
 
@@ -38,7 +38,8 @@ export function priceOf(k: Market, c: Partial<Call>, m: BoardRow): number {
     : k.call_type === "total" ? (c.yes ? o.total?.over : c.yes === false ? o.total?.under : undefined)
     : k.call_type === "spread" ? (c.team_id === m.home_team_id ? o.spread?.home : c.team_id === m.away_team_id ? o.spread?.away : undefined)
     : undefined;
-  return p ?? k.default_price ?? k.points / 10;
+  // a narrower call (the red card's time window) multiplies the standard price
+  return p ?? (k.default_price ?? k.points / 10) * (c.pick ? k.option_mult?.[c.pick] ?? 1 : 1);
 }
 // points = 10 × price; a saved call keeps the price it was taken at
 export const pointsFor = (price: number) => Math.round(10 * price);
@@ -85,7 +86,8 @@ export function clashes(a: Call, b: Call, m: BoardRow): boolean {
 export function pointsRange(k: Market, m: BoardRow): string {
   const vs: Partial<Call>[] = k.call_type === "winner" ? [{ team_id: m.home_team_id }, { team_id: m.away_team_id }, ...(m.sport === "soccer" ? [{ pick: "draw" }] : [])]
     : k.call_type === "total" ? [{ yes: true }, { yes: false }]
-    : k.call_type === "spread" ? [{ team_id: m.home_team_id }, { team_id: m.away_team_id }] : [{}];
+    : k.call_type === "spread" ? [{ team_id: m.home_team_id }, { team_id: m.away_team_id }]
+    : k.option_mult ? [{}, ...Object.keys(k.option_mult).map((pick) => ({ pick }))] : [{}];
   const ps = vs.map((v) => pointsFor(priceOf(k, v, m)));
   const lo = Math.min(...ps), hi = Math.max(...ps);
   return lo === hi ? String(lo) : `${lo}–${hi}`;

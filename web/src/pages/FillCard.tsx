@@ -233,11 +233,20 @@ export default function FillCard() {
                       <option value="h">{match.home_team} (home)</option>
                       <option value="a">{match.away_team} (away)</option>
                     </select>
-                    <select className="select" style={{ width: 260 }} disabled={!editable} value={cur?.player_id ?? ""} onChange={(e) => set(k.call_type, e.target.value ? { call_type: k.call_type, player_id: Number(e.target.value) } : null)}>
+                    <select className="select" style={{ width: 260 }} disabled={!editable} value={cur?.player_id ?? ""} onChange={(e) => set(k.call_type, e.target.value ? { call_type: k.call_type, player_id: Number(e.target.value), pick: k.call_type === "red" ? cur?.pick ?? null : null } : null)}>
                       <option value="">— pick a player —</option>
                       {squad.map((p) => <option key={p.id} value={p.id}>{p.name}{p.position ? ` · ${p.position}` : ""}</option>)}
                     </select>
                     {squad.length === 0 && <span className="tiny magenta">Squad still loading for this side — check back in a minute.</span>}
+                  </div>
+                )}
+                {k.call_type === "red" && cur?.player_id && (k.options ?? []).length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="tiny muted" style={{ marginBottom: 6 }}>When? Optional — name the window for a bigger price. Stoppage time counts in its half's last window.</div>
+                    <div className="opts" style={{ marginTop: 0 }}>
+                      {opt(k, !cur.pick, "Any time", { call_type: "red", player_id: cur.player_id, pick: null })}
+                      {(k.options ?? []).map((w) => opt(k, cur.pick === w, `${w}'`, { call_type: "red", player_id: cur.player_id, pick: w }))}
+                    </div>
                   </div>
                 )}
 

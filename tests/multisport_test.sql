@@ -151,6 +151,32 @@ do $$ begin
   assert res('bbbbbbbb-0000-0000-0000-000000000002', 8000, 'total') = 'miss', 'one goal is under 2.5';
 end $$;
 
+-- --- football: the red card with a time window (0015) -----------------------------------
+insert into matches (id, competition_code, sport, season, utc_date, status, home_team_id, away_team_id, odds) values
+  (8100, 'FRI', 'soccer', '2026', now() + interval '2 hours', 'TIMED', 8001, 8002, '{}');
+do $$ begin
+  assert rejects('aaaaaaaa-0000-0000-0000-000000000001', 8100, '[{"call_type":"red","player_id":80011,"pick":"91-95"}]', '%time window%'), 'unknown window';
+  assert rejects('aaaaaaaa-0000-0000-0000-000000000001', 8100, '[{"call_type":"yellow","player_id":80011,"pick":"0-15"}]', '%time window%'), 'only the red takes a window';
+end $$;
+select play(:'A', 8100, '[{"call_type":"red","player_id":80011,"pick":"31-45"}]');
+select play(:'B', 8100, '[{"call_type":"red","player_id":80011,"pick":"76-90"}]');
+do $$ begin
+  assert price_of('aaaaaaaa-0000-0000-0000-000000000001', 8100, 'red') = 72, 'a window multiplies the price: 12 × 6';
+  assert (select label from card_crowd((select id from cards where match_id = 8100 and crew_id is null)) where key = '80011:31-45') = 'Krishna · 31-45''', 'crowd: the window';
+end $$;
+update matches set status = 'IN_PLAY', utc_date = now() - interval '1 hour' where id = 8100;
+insert into match_events (match_id, type, minute, injury_time, team_id, player_id, provider_key) values (8100, 'red', 45, 2, 8001, 80011, 'r1');
+select process_match_updates();
+do $$ begin
+  assert res('aaaaaaaa-0000-0000-0000-000000000001', 8100, 'red') = 'hit', '45+2 lands in 31–45, live';
+  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8100) = 720, 'pays 10 × 72';
+end $$;
+select finish(8100, 0, 1);
+select process_match_updates();
+do $$ begin
+  assert res('bbbbbbbb-0000-0000-0000-000000000002', 8100, 'red') = 'miss', 'the wrong window misses';
+end $$;
+
 -- --- basketball: 112–104 · prices from the odds, locked at save; spread; player lines; tied top scorer ----------
 select play(:'A', 2000, '[{"call_type":"winner","team_id":2001},{"call_type":"total","yes":true,"line":150},
   {"call_type":"spread","team_id":2001},{"call_type":"top_scorer","player_id":20012},
