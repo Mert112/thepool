@@ -134,15 +134,16 @@ export async function setBoost(cardId: string, call: CallType | null) {
   if (error) fail(error);
 }
 
-// crews
+// crews — only these columns are readable (the invite code comes from crew_invite_code())
+const CREW_COLS = "id, name, description, mode, owner_id, rival_crew_id, created_at";
 export async function getMyCrews(): Promise<Crew[]> {
   const { data: u } = await supabase.auth.getUser();
-  const { data, error } = await supabase.from("crew_members").select("crews(*)").eq("user_id", u.user?.id ?? "").order("joined_at");
+  const { data, error } = await supabase.from("crew_members").select(`crews(${CREW_COLS})`).eq("user_id", u.user?.id ?? "").order("joined_at");
   if (error) fail(error);
   return (data ?? []).map((r: any) => r.crews).filter(Boolean) as Crew[];
 }
 export async function getCrew(id: string): Promise<Crew | null> {
-  const { data, error } = await supabase.from("crews").select("*").eq("id", id).maybeSingle();
+  const { data, error } = await supabase.from("crews").select(CREW_COLS).eq("id", id).maybeSingle();
   if (error) fail(error);
   return data as Crew | null;
 }

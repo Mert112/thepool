@@ -22,7 +22,8 @@ export default function Board() {
   const pickSport = (s: string) => { setLeague("ALL"); setParams(s === "ALL" ? {} : { sport: s }, { replace: true }); };
 
   if (error) return <ErrorBox msg={error} />;
-  const rowsAll = board ?? [];
+  // a game past its start is closed for cards even when the feed has no live data for it yet
+  const rowsAll = (board ?? []).map((r) => (r.phase === "upcoming" && new Date(r.utc_date).getTime() <= now ? { ...r, phase: "live" as const, clock: r.clock ?? "Started" } : r));
   const liveRows = rowsAll.filter((r) => r.phase === "live");
   const comps = meta?.comps ?? [];
   const leagues = ["ALL", ...comps.filter((c) => rowsAll.some((r) => r.competition_code === c.code)).map((c) => c.code)];
@@ -126,7 +127,10 @@ export function CreateCardDialog({ row, onClose, onDone, defaultCrew }: { row: B
   const [audience, setAudience] = useState<string | null>(defaultCrew ?? null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const { data } = useLoad(async () => ({ crews: await getMyCrews(), markets: (await getMarkets(row.sport)).filter((k) => offered(k, row)) }), [row.sport]);
+  const { data, error: loadErr } = useLoad(async () => {
+    const [crews, markets] = await Promise.all([getMyCrews(), getMarkets(row.sport)]);
+    return { crews, markets: markets.filter((k) => offered(k, row)) };
+  }, [row.sport]);
   const on = (m: "simple" | "complex") => (data?.markets ?? []).filter((k) => m === "complex" || k.simple);
   const max = (m: "simple" | "complex") => on(m).reduce((s, k) => s + k.points, 0);
   const create = async () => {
@@ -150,8 +154,8 @@ export function CreateCardDialog({ row, onClose, onDone, defaultCrew }: { row: B
       {(data?.crews ?? []).map((c) => (
         <button key={c.id} className={"choice" + (audience === c.id ? " on" : "")} onClick={() => { setAudience(c.id); setMode(c.mode); }}><b>{c.name}</b><small>Scored only inside this crew.</small></button>
       ))}
-      <ErrorBox msg={err} />
-      <div style={{ marginTop: 14 }}><button className="btn big" disabled={busy} onClick={create}>Open the card</button></div>
+      <ErrorBox msg={err ?? loadErr} />
+      <div style={{ marginTop: 14 }}><button className="btn big" disabled={busy || !data} onClick={create}>Open the card</button></div>
     </Modal>
   );
 }

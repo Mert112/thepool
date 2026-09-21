@@ -32,7 +32,7 @@ export default function Match() {
   const card: Card | undefined = cards.find((c) => c.id === cardId);
   const complex = card?.mode === "complex";
   const shown = markets.filter((k) => complex || k.simple);
-  const upcoming = match.phase === "upcoming";
+  const upcoming = match.phase === "upcoming" && new Date(match.utc_date).getTime() > now;   // closed at the start, live data or not
   const topCrowd = (ct: string) => crowd.filter((c) => c.call_type === ct).sort((a, b) => b.n - a.n)[0];
 
   return (
