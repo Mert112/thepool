@@ -132,7 +132,7 @@ export function CreateCardDialog({ row, onClose, onDone, defaultCrew }: { row: B
     return { crews, markets: markets.filter((k) => offered(k, row)) };
   }, [row.sport]);
   const on = (m: "simple" | "complex") => (data?.markets ?? []).filter((k) => m === "complex" || k.simple);
-  const max = (m: "simple" | "complex") => on(m).reduce((s, k) => s + k.points, 0);
+  const priced = !!row.odds?.provider;
   const create = async () => {
     setBusy(true); setErr(null);
     try { onDone(await openCard(row.match_id, mode, audience)); } catch (e: any) { setErr(e.message); setBusy(false); }
@@ -146,9 +146,10 @@ export function CreateCardDialog({ row, onClose, onDone, defaultCrew }: { row: B
       {(["simple", "complex"] as const).map((m) => (
         <button key={m} className={"choice" + (mode === m ? " on" : "")} onClick={() => setMode(m)}>
           <b>{m === "simple" ? `Simple · ${on("simple").length} calls` : `Complex · ${on("complex").length} calls`}</b>
-          <small>{m === "simple" ? `${listOf(simpleKs).replace(/^./, (c) => c.toUpperCase())}. Maximum ${max("simple")} points.` : `Adds ${listOf(extraKs)}. Maximum ${max("complex")}.`}</small>
+          <small>{m === "simple" ? `${listOf(simpleKs).replace(/^./, (c) => c.toUpperCase())}.` : `Adds ${listOf(extraKs)}.`}</small>
         </button>
       ))}
+      <div className="tiny muted" style={{ marginTop: 10 }}>{priced ? `Points follow the odds (${row.odds.provider}): each call pays 10 × its price, locked in when you save it.` : "No odds posted yet: each call pays its standard price."}</div>
       <div className="eyebrow" style={{ margin: "14px 0 8px" }}>Who plays it</div>
       <button className={"choice" + (audience === null ? " on" : "")} onClick={() => setAudience(null)}><b>Everyone</b><small>A public card — anyone on The Pool can join it.</small></button>
       {(data?.crews ?? []).map((c) => (

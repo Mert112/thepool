@@ -6,7 +6,7 @@ import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, plural, soon } from "../lib/format";
 import { Avatar, Empty, ErrorBox, Pips, Spinner } from "../components/ui";
 import { CreateCardDialog } from "./Board";
-import { offered } from "../lib/calls";
+import { offered, pointsRange } from "../lib/calls";
 
 export default function Match() {
   const { id } = useParams();
@@ -52,7 +52,7 @@ export default function Match() {
           {card ? (
             <>
               <div className="row-of" style={{ marginBottom: 12 }}>
-                <span className="badge">{complex ? `Complex card · ${shown.length} calls · ${shown.reduce((s, k) => s + k.points, 0)} max` : `Simple card · ${shown.length} calls · ${shown.reduce((s, k) => s + k.points, 0)} max`}</span>
+                <span className="badge">{complex ? `Complex card · ${shown.length} calls` : `Simple card · ${shown.length} calls`}{match.odds?.provider ? " · priced by the odds" : ""}</span>
                 <span className="small muted">{card.crew_id ? `${card.crews?.name} only` : "Open card · anyone can join"}</span>
                 <span className="small num" style={{ color: soon(match.utc_date, now) ? "var(--magenta)" : "var(--soft)" }}>
                   {upcoming ? `Locks in ${countdown(match.utc_date, now)}` : match.phase === "live" ? "In play" : "Settled"}
@@ -81,9 +81,9 @@ export default function Match() {
             {shown.map((k) => {
               const t = topCrowd(k.call_type);
               return (
-                <div key={k.call_type} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 40px minmax(0,1.2fr)", gap: 14, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--raise)" }}>
+                <div key={k.call_type} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px minmax(0,1.2fr)", gap: 14, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--raise)" }}>
                   <div><b>{k.title}</b><div className="tiny muted">{k.description}</div></div>
-                  <div className="num lime" style={{ fontSize: 22 }}>{k.points}</div>
+                  <div className="num lime" style={{ fontSize: 20, whiteSpace: "nowrap" }}>{pointsRange(k, match)}</div>
                   <div className="small muted">{t ? <span>{t.pct}% · {t.label}</span> : <span className="faint">no calls yet</span>}<Pips n={Math.min(8, k.points)} /></div>
                 </div>
               );

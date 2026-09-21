@@ -1,9 +1,9 @@
 // Thin data layer over Supabase. Every write goes through an rpc_* function in the database.
 import { supabase } from "./supabase";
 
-export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "margin" | "top_scorer" | "sets" | "distance" | "method" | "round";
+export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "margin" | "top_scorer" | "sets" | "distance" | "method" | "round" | "spread" | "player_line";
 export type Sport = { code: string; name: string; sort_order: number };
-export type Market = { sport: string; options: string[] | null; call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
+export type Market = { sport: string; options: string[] | null; default_price: number | null; call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
 export type BoardRow = {
   match_id: number; competition_code: string; competition_name: string; season: string | null; utc_date: string; status: string; minute: number | null;
   home_score: number | null; away_score: number | null; ft_home: number | null; ft_away: number | null; duration: string | null;
@@ -13,9 +13,14 @@ export type BoardRow = {
   card_count: number; playing: number; phase: "live" | "upcoming" | "settled";
   sport: string; sport_name: string; clock: string | null; event_name: string | null; home_periods: number[] | null; away_periods: number[] | null;
   total_line: number | null; best_of: number | null; result_detail: { winner?: string; method?: string; round?: string; retired?: boolean };
+  odds: Odds;
 };
+// decimal prices from the feed (frozen at the start)
+export type Odds = { provider?: string | null; home?: number; away?: number; draw?: number;
+  spread?: { home_line: number; home: number; away: number }; total?: { line: number; over: number; under: number } };
+export type Prop = { player_id: number; stat: string; line: number };
 export type Card = { id: string; match_id: number; mode: "simple" | "complex"; crew_id: string | null; created_by: string | null; status: "open" | "locked" | "live" | "settled" | "disputed"; crews?: { name: string } | null };
-export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
+export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; price?: number | null; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
 export type Entry = { id: string; card_id: string; user_id: string; boost_call_type: CallType | null; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null } };
 export type Player = { id: number; team_id: number | null; name: string; position: string | null };
 export type Crew = { id: string; name: string; description: string | null; mode: "simple" | "complex"; owner_id: string; rival_crew_id: string | null; created_at: string };
@@ -105,6 +110,12 @@ export async function getSquads(homeId: number, awayId: number): Promise<Player[
   const { data, error } = await supabase.from("players").select("id, team_id, name, position").in("team_id", [homeId, awayId]).order("name");
   if (error) fail(error);
   return data as Player[];
+}
+
+export async function getProps(matchId: number): Promise<Prop[]> {
+  const { data, error } = await supabase.from("match_props").select("player_id, stat, line").eq("match_id", matchId);
+  if (error) fail(error);
+  return (data ?? []) as Prop[];
 }
 
 export async function getEvents(matchId: number): Promise<MatchEvent[]> {

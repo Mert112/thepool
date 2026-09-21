@@ -94,7 +94,6 @@ end $$;
 select test_as('11111111-1111-1111-1111-111111111111');
 select rpc_save_calls(:'card_id', '[
   {"call_type":"winner","team_id":57},
-  {"call_type":"draw","yes":false},
   {"call_type":"score","home_goals":2,"away_goals":1},
   {"call_type":"scorer","player_id":2},
   {"call_type":"assist","player_id":3},
@@ -131,11 +130,11 @@ select test_reset();
 -- --- Tobias fills the same card: simple-ish picks, boost on the draw --------------
 select test_as('22222222-2222-2222-2222-222222222222');
 select rpc_save_calls(:'card_id', '[
-  {"call_type":"draw","yes":true},
+  {"call_type":"winner","pick":"draw"},
   {"call_type":"scorer","player_id":5},
   {"call_type":"yellow","player_id":7}
 ]');
-select rpc_set_boost(:'card_id', 'draw');
+select rpc_set_boost(:'card_id', 'winner');
 -- before lock Tobias cannot see Mina's calls, nor her entry row, but can see she is playing
 do $$ begin
   assert (select count(*) from calls) = 3, 'only own calls visible before lock';
@@ -161,7 +160,7 @@ do $$ begin
   exception when others then if sqlerrm not like '%locked%' then raise; end if; end;
   perform test_reset();
   perform test_as('22222222-2222-2222-2222-222222222222');
-  assert (select count(*) from calls) = 10, 'everyone''s calls visible after lock';
+  assert (select count(*) from calls) = 9, 'everyone''s calls visible after lock';
   assert (select count(*) from entries) = 2, 'everyone''s entries visible after lock';
   perform test_reset();
 end $$;
@@ -181,9 +180,8 @@ do $$ declare e uuid := tv('mina_entry')::uuid; begin
   assert (select result from calls where entry_id = e and call_type = 'red') = 'pending', 'live: red still open';
   -- §3 progressive settlement: result calls stay open at 1–1 in the 67th minute
   assert (select result from calls where entry_id = e and call_type = 'winner') = 'pending', 'live: winner open';
-  assert (select result from calls where entry_id = e and call_type = 'draw') = 'pending', 'live: draw open';
   assert (select result from calls where entry_id = e and call_type = 'score') = 'pending', 'live: score open';
-  assert (select points from entries where id = e) = 7 + 9 + 6, 'live banked points';
+  assert (select points from entries where id = e) = 35 + 50 + 35, 'live banked points';
 end $$;
 
 -- --- full time 2–1: Saka 90+3 (counts), Konaté red 90+5 (counts), ET goal ignored --------------
@@ -198,20 +196,20 @@ select process_match_updates();
 do $$ declare e uuid := tv('mina_entry')::uuid; t uuid; begin
   select id into t from entries where card_id = tv('card_id')::uuid and user_id = '22222222-2222-2222-2222-222222222222';
   assert (select status from cards where id = tv('card_id')::uuid) = 'settled', 'card settled';
-  -- Mina: winner 1 + draw(no) 3 + score 8 + scorer 7 + assist 9 + yellow 6 + red 10×2 = 54
-  assert (select points from entries where id = e) = 54, format('Mina points %s', (select points from entries where id = e));
-  assert (select hits from entries where id = e) = 7, 'Mina 7 of 7';
-  -- Tobias: draw(yes) miss (boost wasted, no downside), scorer Salah hit 7, yellow hit 6 = 13
-  assert (select points from entries where id = t) = 13, format('Tobias points %s', (select points from entries where id = t));
-  assert (select result from calls where entry_id = t and call_type = 'draw') = 'miss', 'boosted miss costs nothing';
-  assert (select points_awarded from calls where entry_id = t and call_type = 'draw') = 0, 'boosted miss = 0';
+  -- Mina, at standard prices (points = 10 × price): result 28 + score 80 + scorer 35 + assist 50 + yellow 35 + red 120×2 = 468
+  assert (select points from entries where id = e) = 468, format('Mina points %s', (select points from entries where id = e));
+  assert (select hits from entries where id = e) = 6, 'Mina 6 of 6';
+  -- Tobias: the draw (boosted) misses at no cost, scorer Salah hit 35, yellow hit 35 = 70
+  assert (select points from entries where id = t) = 70, format('Tobias points %s', (select points from entries where id = t));
+  assert (select result from calls where entry_id = t and call_type = 'winner') = 'miss', 'boosted miss costs nothing';
+  assert (select points_awarded from calls where entry_id = t and call_type = 'winner') = 0, 'boosted miss = 0';
   -- ET goal did not count against anything
   assert (select count(*) from match_events where match_id = 1000 and not counts) = 1, 'ET event excluded';
   -- stickers: one per (competition, season, call type)
-  assert (select count(*) from stickers where user_id = '11111111-1111-1111-1111-111111111111') = 7, 'Mina 7 stickers';
+  assert (select count(*) from stickers where user_id = '11111111-1111-1111-1111-111111111111') = 6, 'Mina 6 stickers';
   assert (select count(*) from stickers where user_id = '22222222-2222-2222-2222-222222222222') = 2, 'Tobias 2 stickers';
   -- receipts in the crew feed
-  assert (select count(*) from crew_posts where call_id is not null) = 9, 'receipts posted';
+  assert (select count(*) from crew_posts where call_id is not null) = 8, 'receipts posted';
   -- result mail queued for both
   assert (select count(*) from notifications where type = 'result') = 2, 'result mail queued';
   -- streaks
@@ -219,7 +217,7 @@ do $$ declare e uuid := tv('mina_entry')::uuid; t uuid; begin
   assert (select settlement_version from matches where id = 1000) = 1, 'settlement v1';
 end $$;
 
--- --- winner void on a draw ---------------------------------------------------------
+-- --- the result is 3-way: a draw beats a side ------------------------------------------
 -- settle match 1001 as 0–0: Tobias has no entry; Mina's scorer call misses, and we add a winner call for a third user
 select test_as('11111111-1111-1111-1111-111111111111');
 select rpc_save_calls(:'card2_id', '[{"call_type":"scorer","player_id":5},{"call_type":"winner","team_id":64}]') ;
@@ -228,7 +226,7 @@ update matches set utc_date = now() - interval '3 hours' where id = 1001;
 update matches set status = 'FINISHED', home_score = 0, away_score = 0, ft_home = 0, ft_away = 0, provider_updated = now() where id = 1001;
 select process_match_updates();
 do $$ begin
-  assert (select result from calls c join entries e on e.id = c.entry_id where e.card_id = tv('card2_id')::uuid and call_type = 'winner') = 'void', 'winner void on draw';
+  assert (select result from calls c join entries e on e.id = c.entry_id where e.card_id = tv('card2_id')::uuid and call_type = 'winner') = 'miss', 'a side loses to a draw';
   assert (select points from entries where card_id = tv('card2_id')::uuid) = 0, 'no points on 0–0 card';
   -- streak: same matchday, Mina landed on the other card that day → still 1
   assert (select streak from profiles where id = '11111111-1111-1111-1111-111111111111') = 1, 'streak survives';
@@ -240,7 +238,7 @@ update matches set provider_updated = now() + interval '1 second' where id = 100
 select process_match_updates();
 do $$ declare e uuid := tv('mina_entry')::uuid; begin
   assert (select result from calls where entry_id = e and call_type = 'assist') = 'miss', 'correction: assist now missed';
-  assert (select points from entries where id = e) = 45, format('corrected points %s', (select points from entries where id = e));
+  assert (select points from entries where id = e) = 418, format('corrected points %s', (select points from entries where id = e));
   assert (select status from cards where id = tv('card_id')::uuid) = 'settled', 'disputed → settled';
   assert (select settlement_version from matches where id = 1000) = 2, 'settlement v2';
   assert (select count(*) from notifications where type = 'correction') = 1, 'correction mail queued';
@@ -261,10 +259,10 @@ end $$;
 -- --- leaderboard ----------------------------------------------------------------
 do $$ begin
   perform test_as('11111111-1111-1111-1111-111111111111');
-  assert (select points from leaderboard('overall') limit 1) = 45, 'leaderboard top';
+  assert (select points from leaderboard('overall') limit 1) = 418, 'leaderboard top';
   assert (select display_name from leaderboard('crew', tv('crew_id')) limit 1) = 'Mina', 'crew table';
   assert (my_stats()->>'rank')::int = 1, 'my rank';
-  assert crew_score(tv('crew_id')::uuid) = 58, format('crew score %s', crew_score(tv('crew_id')::uuid));
+  assert crew_score(tv('crew_id')::uuid) = 488, format('crew score %s', crew_score(tv('crew_id')::uuid));
   perform test_reset();
 end $$;
 

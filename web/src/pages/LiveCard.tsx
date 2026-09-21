@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { getCard, getCrewPosts, getEntries, getEvents, getMarkets, getMatch, getSquads, post, type Call, type Entry } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
 import { ago, ord, plural } from "../lib/format";
-import { liveClock, offered, pickText as describe } from "../lib/calls";
+import { liveClock, offered, pickText as describe, pointsFor, priceOfCall } from "../lib/calls";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 
 export default function LiveCard() {
@@ -21,7 +21,9 @@ export default function LiveCard() {
       getMarkets(match.sport), getEntries(card.id), getEvents(card.match_id), card.crew_id ? getCrewPosts(card.crew_id) : Promise.resolve([]),
       getSquads(match.home_team_id, match.away_team_id),
     ]);
-    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entries, events, posts, squads };
+    // the card's markets: those on offer, plus any someone actually called (a player line needs its props to be "offered")
+    const called = new Set(entries.flatMap((e) => e.calls.map((c) => c.call_type)));
+    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && (offered(k, match) || called.has(k.call_type))), entries, events, posts, squads };
   }, [id]);
 
   // poll while live
@@ -93,7 +95,9 @@ export default function LiveCard() {
               <div key={k.call_type} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto 60px", gap: 12, alignItems: "center", padding: "9px 0", borderBottom: "1px solid var(--raise)" }}>
                 <div><div className="small" style={{ fontWeight: 700 }}>{k.title}{mine.boost_call_type === k.call_type && <span className="tag" style={{ marginLeft: 8, borderColor: "var(--magenta)", color: "var(--magenta)" }}>Boost</span>}</div><div className="tiny muted">{label}</div></div>
                 <span className={cls}>{st}</span>
-                <div className="num" style={{ fontSize: 17, textAlign: "right", color: st === "Hit" ? "var(--lime)" : "#4a4a44" }}>{st === "Hit" ? `+${c!.points_awarded}` : "0"}</div>
+                <div className="num" style={{ fontSize: 17, textAlign: "right", color: st === "Hit" ? "var(--lime)" : "#4a4a44" }} title={c && st !== "Hit" && st !== "Missed" && st !== "Void" ? "pays if it lands" : undefined}>
+                  {st === "Hit" ? `+${c!.points_awarded}` : c && (st === "Open" || st === "Running") ? <span className="faint">{pointsFor(priceOfCall(k, c, match)) * (mine.boost_call_type === k.call_type ? 2 : 1)}</span> : "0"}
+                </div>
               </div>
             );
           })}

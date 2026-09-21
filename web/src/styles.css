@@ -288,3 +288,7 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* what an option pays, on the option itself */
+.opt .odds { display: inline-block; margin-left: 10px; padding: 1px 8px; border-radius: 999px; font-family: var(--display); font-size: 15px; letter-spacing: 0.02em; background: var(--raise); color: var(--lime); transition: background-color 0.18s var(--ease), color 0.18s var(--ease); }
+.opt.on .odds { background: var(--ink); color: var(--lime); }

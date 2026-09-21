@@ -82,6 +82,24 @@ function statusOf(st, sport) {
   return /SUSPEND|DELAY/.test(name) ? "SUSPENDED" : "POSTPONED";
 }
 
+// American odds → decimal price ("+255" → 3.55, "-185" → 1.54)
+const dec = (a) => { const n = num(String(a ?? "").replace("+", "")); return !n ? null : Math.round((n > 0 ? 1 + n / 100 : 1 - 100 / n) * 100) / 100; };
+
+// the board's prices (DraftKings via ESPN), stored as decimals; a missing side falls back to the standard -110
+function oddsOf(c) {
+  const o = c.odds?.[0]; if (!o) return {};
+  const ml = o.moneyline ?? {}, ps = o.pointSpread ?? {}, tt = o.total ?? {};
+  const out = {};
+  const home = dec(ml.home?.close?.odds), away = dec(ml.away?.close?.odds), draw = dec(ml.draw?.close?.odds ?? o.drawOdds?.moneyLine);
+  if (home) out.home = home; if (away) out.away = away; if (draw) out.draw = draw;
+  const hl = num(String(ps.home?.close?.line ?? "").replace("+", ""));
+  if (hl !== null) out.spread = { home_line: hl, home: dec(ps.home.close.odds) ?? 1.91, away: dec(ps.away?.close?.odds) ?? 1.91 };
+  const tl = num(String(tt.over?.close?.line ?? "").replace(/^[ou]/, "")) ?? num(o.overUnder);
+  if (tl !== null) out.total = { line: tl, over: dec(tt.over?.close?.odds) ?? 1.91, under: dec(tt.under?.close?.odds) ?? 1.91 };
+  if (Object.keys(out).length) out.provider = o.provider?.name ?? null;
+  return out;
+}
+
 // "45'+1'" → { minute: 45, injury: 1 }
 function minuteOf(display) {
   const m = /^(\d+)'?(?:\s*\+\s*(\d+))?/.exec(String(display ?? "").trim());
@@ -102,7 +120,7 @@ function base(comp, c, ev, st) {
     utc_date: new Date(c.date ?? c.startDate ?? ev.date).toISOString(),
     status: statusOf(st, comp.sport), minute: null, clock: null,
     home_score: null, away_score: null, ft_home: null, ft_away: null, duration: null,
-    home_periods: null, away_periods: null, line: null, best_of: null, event_name: null, result_detail: {},
+    home_periods: null, away_periods: null, line: null, best_of: null, event_name: null, result_detail: {}, prices: {},
   };
 }
 
@@ -116,6 +134,7 @@ function parseTeamGame(comp, ev, c) {
   const periods = (x) => (x.linescores?.length ? x.linescores.map((l) => num(l.value) ?? 0) : null);
   m.home_periods = periods(h); m.away_periods = periods(a);
   m.line = num(c.odds?.[0]?.overUnder);
+  m.prices = oddsOf(c);
   m.event_name = c.notes?.[0]?.headline ?? null;
   if (started) { m.home_score = num(h.score); m.away_score = num(a.score); }
   if (st?.type?.state === "in") m.clock = st.type.shortDetail ?? st.displayClock ?? null;
@@ -210,33 +229,43 @@ function parseScoreboard(comp, sb) {
 // ---------------------------------------------------------------------------
 // Summary → player stats (US sports) or goals/cards (football)
 // ---------------------------------------------------------------------------
-// [stat, column, which tables count]. Baseball's tables are unnamed: batting is the one with at-bats
+// [stat, column, which tables count] per sport; the first settles the sport's scorer / top-scorer call and is
+// written as 0 for everyone who played. Baseball's tables are unnamed: batting is the one with at-bats
 // (pitching also has an HR column — home runs allowed — which must not count).
-const STAT = {
-  basketball: ["pts", ["PTS"], () => true],
-  american_football: ["td", ["TD"], (g) => /^(rushing|receiving)$/.test(g.name ?? "")],
-  baseball: ["hr", ["HR"], (g) => (g.labels ?? g.names ?? []).includes("AB")],
-  hockey: ["g", ["G"], () => true],
+const any = () => true, table = (re) => (g) => re.test(g.name ?? "");
+const STATS = {
+  basketball: [["pts", "PTS", any], ["reb", "REB", any], ["ast", "AST", any]],
+  american_football: [["td", "TD", table(/^(rushing|receiving)$/)], ["pass_yds", "YDS", table(/^passing$/)], ["rush_yds", "YDS", table(/^rushing$/)],
+                      ["rec_yds", "YDS", table(/^receiving$/)], ["rec", "REC", table(/^receiving$/)]],
+  baseball: [["hr", "HR", (g) => (g.labels ?? g.names ?? []).includes("AB")]],
+  hockey: [["g", "G", any]],
+};
+// the feed's player over/under types → our stats
+const PROP_STAT = {
+  "Total Points": "pts", "Total Rebounds": "reb", "Total Assists": "ast",
+  "Total Passing Yards (incl. overtime)": "pass_yds", "Total Rushing Yards (incl. overtime)": "rush_yds",
+  "Total Receiving Yards (incl. overtime)": "rec_yds", "Total Receptions (incl. overtime)": "rec",
 };
 
 // every athlete with a line in any box-score table took part ('app'); the sport's stat comes from its tables
 function parseBox(sport, s, teamKey) {
-  const [stat, labels, groups] = STAT[sport];
-  const players = new Map(), values = new Map();
+  const defs = STATS[sport], primary = defs[0][0];
+  const players = new Map(), values = new Map();   // "player:stat" → value
+  const add = (id, stat, v) => values.set(`${id}:${stat}`, (values.get(`${id}:${stat}`) ?? 0) + v);
   for (const side of s?.boxscore?.players ?? []) {
     const tk = teamKey(side.team?.id);
     for (const g of side.statistics ?? []) {
-      const counts = groups(g);
-      const idx = counts ? (g.labels ?? g.names ?? []).findIndex((l) => labels.includes(l)) : -1;
+      const labels = g.labels ?? g.names ?? [];
+      const cols = defs.filter(([, , ok]) => ok(g)).map(([stat, label]) => [stat, labels.indexOf(label)]).filter(([, i]) => i >= 0);
       for (const a of g.athletes ?? []) {
         const id = num(a.athlete?.id); if (!id || !a.stats?.length) continue;
         players.set(id, { id, name: a.athlete.displayName, position: a.athlete.position?.abbreviation ?? null, team_key: tk });
-        if (!values.has(id)) values.set(id, 0);
-        if (idx >= 0) values.set(id, values.get(id) + (num(a.stats[idx]) ?? 0));
+        add(id, "app", 0); add(id, primary, 0);
+        for (const [stat, i] of cols) add(id, stat, num(a.stats[i]) ?? 0);
       }
     }
   }
-  const stats = [...values].flatMap(([player_id, value]) => [{ player_id, stat, value }, { player_id, stat: "app", value: 1 }]);
+  const stats = [...values].map(([k, value]) => { const [id, stat] = k.split(":"); return { player_id: Number(id), stat, value: stat === "app" ? 1 : value }; });
   return { players: [...players.values()], stats, events: null };
 }
 
@@ -329,7 +358,7 @@ async function main() {
   // 3. what we already hold, and who is being played
   const existing = new Map();
   for (const part of chunks(list.map((g) => g.match.espn_key), 150)) {
-    for (const r of must(await db.from("matches").select("id, espn_key, provider_hash, provider_updated, total_line").in("espn_key", part), "existing")) existing.set(r.espn_key, r);
+    for (const r of must(await db.from("matches").select("id, espn_key, provider_hash, provider_updated, total_line, odds").in("espn_key", part), "existing")) existing.set(r.espn_key, r);
   }
   const tracked = new Map(must(await db.rpc("sync_tracked_matches"), "tracked").map((r) => [r.espn_key, r]));
 
@@ -369,9 +398,10 @@ async function main() {
     if (g.hold && m.status === "FINISHED") { m.status = "IN_PLAY"; m.clock = "Final · confirming"; }  // settle once the stats are in
     const pre = m.status === "TIMED" || m.status === "SCHEDULED" || m.status === "POSTPONED";
     const total_line = pre ? m.line ?? old?.total_line ?? null : old?.total_line ?? null;  // the line freezes at the start
-    delete m.line;
+    const odds = pre && Object.keys(m.prices).length ? m.prices : old?.odds ?? {};          // and so do the prices
+    delete m.line; delete m.prices;
     const fingerprint = hash([m.status, m.home_score, m.away_score, m.result_detail, g.digest ?? null]);
-    rows.push({ ...m, total_line, home_team_id: teamId.get(g.home), away_team_id: teamId.get(g.away), provider_hash: fingerprint,
+    rows.push({ ...m, total_line, odds, home_team_id: teamId.get(g.home), away_team_id: teamId.get(g.away), provider_hash: fingerprint,
       provider_updated: old && old.provider_hash === fingerprint ? old.provider_updated : now.toISOString() });
   }
   for (const part of chunks(rows, 200)) must(await db.from("matches").upsert(part, { onConflict: "espn_key" }), "matches");
@@ -389,16 +419,42 @@ async function main() {
     squads += players.length ? 1 : 0;
   }));
 
-  // 7. lock, go live, settle
+  // 7. player over/under lines for basketball and American football games in the next 36 hours
+  let props = 0;
+  if (full) {
+    const soon = rows.filter((r) => (r.sport === "basketball" || r.sport === "american_football") && r.status === "TIMED"
+      && new Date(r.utc_date) - now < 36 * 3600e3 && new Date(r.utc_date) > now).slice(0, 30);
+    const ids = new Map();
+    for (const part of chunks(soon.map((r) => r.espn_key), 150)) for (const r of must(await db.from("matches").select("id, espn_key").in("espn_key", part), "prop matches")) ids.set(r.espn_key, r.id);
+    await mapLimit(soon, 4, (r) => isolate(`props ${r.espn_key}`, async () => {
+      const [sport, league] = byCode[r.competition_code].espn_path.split("/"), cid = r.espn_key.split(":").pop();
+      const res = await fetch(`https://sports.core.api.espn.com/v2/sports/${sport}/leagues/${league}/events/${cid}/competitions/${cid}/odds/100/propBets?limit=1000`, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return;
+      const lines = [];
+      for (const it of (await res.json()).items ?? []) {
+        const stat = PROP_STAT[it.type?.name]; const line = num(it.current?.target?.value); const pid = num(/athletes\/(\d+)/.exec(it.athlete?.$ref ?? "")?.[1]);
+        if (stat && line !== null && pid) lines.push({ match_id: ids.get(r.espn_key), player_id: pid, stat, line, updated_at: now.toISOString() });
+      }
+      if (!lines.length || !ids.get(r.espn_key)) return;
+      // only players we know (squads load ahead of the game); a line for anyone else is skipped
+      const known = new Set(must(await db.from("players").select("id").in("id", [...new Set(lines.map((l) => l.player_id))]), "prop players").map((p) => p.id));
+      const keep = uniq(lines.filter((l) => known.has(l.player_id)), (l) => `${l.player_id}:${l.stat}`);
+      must(await db.from("match_props").delete().eq("match_id", ids.get(r.espn_key)), "props reset");
+      if (keep.length) must(await db.from("match_props").insert(keep), "props");
+      props += keep.length;
+    }));
+  }
+
+  // 8. lock, go live, settle
   must(await db.rpc("process_match_updates"), "settlement");
 
   if (full) state.lastFull = now.toISOString();
   state.lastRun = now.toISOString();
   saveState(state);
   for (const p of problems) log("skipped", p);
-  log(`${full ? "full" : "live"} · ${jobs.length} scoreboards · ${rows.length} games · ${list.filter((g) => LIVE.has(g.match.status)).length} live · ${summaries} box scores · ${squads} squads · ${Date.now() - t0}ms`);
+  log(`${full ? "full" : "live"} · ${jobs.length} scoreboards · ${rows.length} games · ${list.filter((g) => LIVE.has(g.match.status)).length} live · ${summaries} box scores · ${squads} squads · ${props} player lines · ${Date.now() - t0}ms`);
 }
 
-export { parseBox, parseSoccerEvents, parseScoreboard };
+export { parseBox, parseSoccerEvents, parseScoreboard, oddsOf };
 // importing for a parser check (THEPOOL_NO_MAIN=1) must not run a sync
 if (!process.env.THEPOOL_NO_MAIN) main().catch((e) => { log("sync failed:", e.message); process.exit(1); });

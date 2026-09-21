@@ -81,17 +81,20 @@ Caddy serves `thepool.today` and `www.thepool.today` with automatic HTTPS; ports
 - `thepool.today` → A record to the server's IP; `www` → CNAME to `thepool.today`.
 - Resend's DKIM/SPF/DMARC records from step 4.
 
-## Markets outside football
+## Markets and points (sportsbook logic)
+A landed call pays **10 × its decimal price**, locked in when the call is saved (an unchanged pick keeps its price; a changed one takes the current price), doubled by the boost. Prices are DraftKings' via ESPN, frozen at the start; with no stake to lose, this gives every pick the same expected value, so the skill is beating the price. A market without a feed price pays its standard price (`markets.default_price`).
+
 | Sport | Simple card | Complex card adds |
 |---|---|---|
-| Basketball | winner 1 · over/under 2 | winning margin 5 · top scorer 7 |
-| American football | winner 1 · over/under 2 | winning margin 5 · touchdown scorer 6 |
-| Baseball | winner 1 · over/under 2 | run margin 4 · home run 6 |
-| Ice hockey | winner 1 · over/under 2 | exact score 8 · goalscorer 5 |
-| Tennis | winner 1 · goes the distance 3 | exact set score 5 |
-| MMA | winner 1 · goes the distance 2 | method 4 · round 7 |
+| Football | result (home / draw / away, 3-way), over/under | handicap, exact score, scorer, assist, yellow, red |
+| Basketball | winner, over/under | spread, player line (points / rebounds / assists), top scorer |
+| American football | winner, over/under | spread, player line (yards / receptions), touchdown scorer |
+| Baseball | winner, over/under | run line, home run |
+| Ice hockey | winner, over/under | puck line, exact score, goalscorer |
+| Tennis | winner, goes the distance | exact set score |
+| MMA | winner, how they win (fighter + KO/TKO · submission · decision) | the round |
 
-Points, titles and bands live in `pool.markets` and can be tuned without a deploy. The over/under line is ESPN's posted line, frozen at the start and stored on each call; games without a posted line simply do not offer it. Player calls settle from ESPN box scores; if a game ends with no box score the call is void, not a miss. A tennis retirement keeps the winner and voids set calls; an MMA draw or no contest voids everything.
+Rules: calls that cannot all land are refused (no hedging); a player who never took part is void; pushes (a total or spread landing exactly on the line) are void; football's result is 3-way, so a draw beats both sides. Player lines come from ESPN's prop feed (lines only, so they pay the standard −110). KO and TKO are one option because ESPN records them as one result, as sportsbooks' method-of-victory markets do.
 
 ## ESPN sync (all sports)
 ```
@@ -113,7 +116,7 @@ Needs a plain Postgres 16:
 ```
 createdb pool
 psql pool -f tests/local_auth_stub.sql          # stand-in for Supabase's auth schema
-for f in supabase/migrations/000[1-5]*.sql supabase/migrations/00{07,08,09,10}*.sql; do psql -v ON_ERROR_STOP=1 pool -f $f; done
+for f in supabase/migrations/000[1-5]*.sql supabase/migrations/00{07,08,09,10,11,12,13,14}*.sql; do psql -v ON_ERROR_STOP=1 pool -f $f; done
 psql pool -f tests/game_test.sql                 # prints ALL TESTS PASSED
 psql pool -f tests/multisport_test.sql           # prints MULTISPORT TESTS PASSED
 ```

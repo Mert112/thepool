@@ -5,7 +5,7 @@ import { useLoad } from "../lib/auth";
 import { Bar, ErrorBox, Spinner } from "../components/ui";
 
 const SHORT: Record<string, string> = { winner: "W", draw: "D", motm: "MOTM", score: "SC", scorer: "G", assist: "A", yellow: "Y", red: "R",
-  total: "O/U", margin: "M", top_scorer: "TS", sets: "S", distance: "DIS", method: "HOW", round: "RD" };
+  total: "O/U", margin: "M", top_scorer: "TS", sets: "S", distance: "DIS", method: "HOW", round: "RD", spread: "SP", player_line: "PL" };
 
 export default function Album() {
   const { data, error, loading } = useLoad(async () => {
