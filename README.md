@@ -1,10 +1,11 @@
 # The Pool — thepool.today
 
-A free-to-play football prediction game. People call what will happen in a match, score points for being right, and argue about it with the same crew every week. This repo is the whole product: database, jobs, email, and the web app.
+A free-to-play sports prediction game — football, basketball, American football, baseball, ice hockey, tennis and MMA. People call what will happen in a game, score points for being right, and argue about it with the same crew every week. This repo is the whole product: database, jobs, email, and the web app.
 
 ```
 supabase/migrations/   schema, game rules, security, read models, notifications, cron
-supabase/functions/    sync-fixtures · sync-live · send-notifications (Deno edge functions)
+supabase/functions/    send-notifications (Deno edge function); sync-fixtures · sync-live are the retired football-data.org sync
+sync/                  espn-sync.mjs — every sport's fixtures, live scores, box scores and squads (runs on the server)
 web/                   React + Vite app (Vercel / Cloudflare Pages / Netlify)
 tests/                 end-to-end rules test that runs on plain Postgres
 ```
@@ -19,8 +20,8 @@ tests/                 end-to-end rules test that runs on plain Postgres
 | Read models | `0004_views.sql` | `v_board`, `leaderboard()`, `crew_score()`, `my_stats()` |
 | Notifications | `0005_notifications.sql` | triggers + enqueue functions for the six email types (§7 of the design doc) |
 | Cron | `0006_cron.sql` | pg_cron schedules calling the edge functions through pg_net |
-| Fixtures | `sync-fixtures` | twice an hour: competitions, next two weeks of matches, squads (football-data.org, ~5 calls/run) |
-| Live | `sync-live` | every minute while something is on: scores, goals, bookings → progressive settlement |
+| Every sport | `0008`–`0010` | sports, ESPN league per competition, per-sport markets and settlement, player box-score stats |
+| Sync | `sync/espn-sync.mjs` | systemd timer, every minute: fixtures a week out (every 30 min), live scoreboards, box scores for games being played, squads for the next 36 h, then settlement |
 | Mail | `send-notifications` | drains the queue through Resend |
 
 Scoring follows the design doc exactly: winner 1 · draw 3 · scoreline 8 · goalscorer 7 · assist 9 · yellow 6 · red 10. Everything settles on the 90-minute state (events at minute ≤ 90 + stoppage only). One boost per matchday doubles one call, no downside. "Best on the pitch" (8) exists in the schema but is **disabled** for v1 because football-data.org does not publish an official man of the match; flip `markets.enabled` when a source exists.
@@ -80,7 +81,28 @@ Caddy serves `thepool.today` and `www.thepool.today` with automatic HTTPS; ports
 - `thepool.today` → A record to the server's IP; `www` → CNAME to `thepool.today`.
 - Resend's DKIM/SPF/DMARC records from step 4.
 
-## Provider notes (football-data.org)
+## Markets outside football
+| Sport | Simple card | Complex card adds |
+|---|---|---|
+| Basketball | winner 1 · over/under 2 | winning margin 5 · top scorer 7 |
+| American football | winner 1 · over/under 2 | winning margin 5 · touchdown scorer 6 |
+| Baseball | winner 1 · over/under 2 | run margin 4 · home run 6 |
+| Ice hockey | winner 1 · over/under 2 | exact score 8 · goalscorer 5 |
+| Tennis | winner 1 · goes the distance 3 | exact set score 5 |
+| MMA | winner 1 · goes the distance 2 | method 4 · round 7 |
+
+Points, titles and bands live in `pool.markets` and can be tuned without a deploy. The over/under line is ESPN's posted line, frozen at the start and stored on each call; games without a posted line simply do not offer it. Player calls settle from ESPN box scores; if a game ends with no box score the call is void, not a miss. A tennis retirement keeps the winner and voids set calls; an MMA draw or no contest voids everything.
+
+## ESPN sync (all sports)
+```
+cp sync/.env.example sync/.env    # SUPABASE_URL and a secret key (Supabase → Settings → API keys)
+bash deploy/setup-sync.sh         # installs the thepool-sync systemd timer
+journalctl -u thepool-sync -f     # one line per pass
+node sync/espn-sync.mjs --dry     # fetch and parse without writing
+```
+ESPN's `site.api.espn.com` feeds are public but unofficial: no key, no contract, and they can change without notice. The sync is polite (about 200 small requests every 30 minutes, a handful per minute otherwise). Team sports only accept single-day `dates=` queries; tennis and fight nights accept ranges. Competitions are rows in `pool.competitions` (`espn_path`, optional `espn_params`) — add a league by inserting one.
+
+## Provider notes (football-data.org, retired)
 - Free tier: 10 requests/minute, 12 competitions (exactly the ones in the design doc), match detail includes goals (with assists) and bookings. The live sync is 1 list call + up to 4 detail calls per minute and sits out the two minutes an hour the fixtures sync uses.
 - 90-minute rule: `score.regularTime` is used when a match goes to extra time; goals/bookings carry `minute` and `injuryTime`, and only `minute <= 90` counts.
 - Corrections after settlement (a re-credited assist, a withdrawn goal) re-run settlement automatically; affected players get a "correction" email.
@@ -91,8 +113,9 @@ Needs a plain Postgres 16:
 ```
 createdb pool
 psql pool -f tests/local_auth_stub.sql          # stand-in for Supabase's auth schema
-for f in supabase/migrations/000[1-5]*.sql supabase/migrations/0007*.sql; do psql -v ON_ERROR_STOP=1 pool -f $f; done
+for f in supabase/migrations/000[1-5]*.sql supabase/migrations/00{07,08,09,10}*.sql; do psql -v ON_ERROR_STOP=1 pool -f $f; done
 psql pool -f tests/game_test.sql                 # prints ALL TESTS PASSED
+psql pool -f tests/multisport_test.sql           # prints MULTISPORT TESTS PASSED
 ```
 The test walks a full card: crew creation, RLS, filling, the boost rule, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, a void winner on a 0–0, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
 

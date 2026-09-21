@@ -189,3 +189,13 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 .brag .display { font-size: 32px; }
 .sticker { width: 140px; background: var(--lime); color: var(--ink); border-radius: 12px; padding: 14px; }
 .spinner { padding: 40px; text-align: center; color: var(--mute); }
+
+/* sport filter: one row that scrolls sideways on phones; magenta counts what is live */
+.sports { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.sports::-webkit-scrollbar { display: none; }
+.sports .pill { white-space: nowrap; flex: none; }
+.live-n { display: inline-block; margin-left: 7px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--magenta); color: var(--ink); font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; }
+.periods { display: grid; gap: 4px 10px; font-size: 13px; margin-top: 10px; align-items: center; }
+.periods span { text-align: center; color: var(--text-2); }
+.periods .h { color: var(--mute); font-size: 11px; font-weight: 700; }
+.periods .t { text-align: left; font-weight: 700; color: var(--text); }

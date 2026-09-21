@@ -1,27 +1,35 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { getBoard, getCompetitions, getMarkets, openCard, getMyCrews, type BoardRow } from "../lib/api";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { getBoard, getCompetitions, getLiveCounts, getMarkets, getSports, openCard, getMyCrews, type BoardRow, type Market } from "../lib/api";
 import { useLoad, useNow } from "../lib/auth";
+import { liveClock, offered } from "../lib/calls";
 import { countdown, fmtDay, fmtTime, soon } from "../lib/format";
 import { Empty, ErrorBox, Modal, Spinner } from "../components/ui";
 
 export default function Board() {
   const nav = useNavigate();
   const now = useNow();
+  const [params, setParams] = useSearchParams();
+  const sport = params.get("sport") ?? "ALL";
   const [phase, setPhase] = useState<"live" | "upcoming" | "settled">("upcoming");
   const [league, setLeague] = useState("ALL");
   const [creating, setCreating] = useState<BoardRow | null>(null);
-  const { data, error, loading, reload } = useLoad(async () => {
-    const [board, comps] = await Promise.all([getBoard(), getCompetitions()]);
-    return { board, comps };
+  const { data: meta } = useLoad(async () => {
+    const [sports, comps, markets, liveBySport] = await Promise.all([getSports(), getCompetitions(), getMarkets(), getLiveCounts()]);
+    return { sports, comps, markets, liveBySport };
   }, []);
-  if (loading && !data) return <Spinner />;
+  const { data: board, error, loading, reload } = useLoad(() => getBoard(sport === "ALL" ? undefined : sport), [sport]);
+  const pickSport = (s: string) => { setLeague("ALL"); setParams(s === "ALL" ? {} : { sport: s }, { replace: true }); };
+
   if (error) return <ErrorBox msg={error} />;
-  const board = data!.board;
-  const liveRows = board.filter((r) => r.phase === "live");
-  const leagues = ["ALL", ...data!.comps.filter((c) => board.some((r) => r.competition_code === c.code)).map((c) => c.code)];
-  const rows = board.filter((r) => r.phase === phase).filter((r) => league === "ALL" || r.competition_code === league);
+  const rowsAll = board ?? [];
+  const liveRows = rowsAll.filter((r) => r.phase === "live");
+  const comps = meta?.comps ?? [];
+  const leagues = ["ALL", ...comps.filter((c) => rowsAll.some((r) => r.competition_code === c.code)).map((c) => c.code)];
+  const rows = rowsAll.filter((r) => r.phase === phase).filter((r) => league === "ALL" || r.competition_code === league);
   if (phase === "settled") rows.reverse();
+  const liveTotal = Object.values(meta?.liveBySport ?? {}).reduce((a, b) => a + b, 0);
+  const marketsOf = (s: string) => (meta?.markets ?? []).filter((k) => k.sport === s);
 
   const go = (r: BoardRow) => {
     if (r.phase === "upcoming") { if (r.card_count > 0) nav(`/match/${r.match_id}`); else setCreating(r); }
@@ -31,9 +39,17 @@ export default function Board() {
 
   return (
     <div>
+      <div className="row-of sports" style={{ marginBottom: 14 }}>
+        <button className={"pill" + (sport === "ALL" ? " on" : "")} onClick={() => pickSport("ALL")}>All sports{liveTotal ? <span className="live-n">{liveTotal}</span> : null}</button>
+        {(meta?.sports ?? []).map((s) => {
+          const n = meta?.liveBySport[s.code] ?? 0;
+          return <button key={s.code} className={"pill" + (sport === s.code ? " on" : "")} onClick={() => pickSport(s.code)}>{s.name}{n ? <span className="live-n">{n}</span> : null}</button>;
+        })}
+      </div>
+
       {liveRows.length > 0 && (
         <div className="ticker">
-          {liveRows.map((r) => <div key={r.match_id} onClick={() => go(r)} style={{ cursor: "pointer" }}><span className="min">{r.minute ? `${r.minute}'` : "Live"}</span><span>{r.home_short ?? r.home_team}</span><span className="sc">{r.home_score ?? 0}–{r.away_score ?? 0}</span><span>{r.away_short ?? r.away_team}</span></div>)}
+          {liveRows.map((r) => <div key={r.match_id} onClick={() => go(r)} style={{ cursor: "pointer" }}><span className="min">{liveClock(r)}</span><span>{r.home_short ?? r.home_team}</span><span className="sc">{r.home_score ?? 0}–{r.away_score ?? 0}</span><span>{r.away_short ?? r.away_team}</span></div>)}
         </div>
       )}
       <div className="row-of" style={{ justifyContent: "space-between", marginBottom: 14 }}>
@@ -45,36 +61,41 @@ export default function Board() {
           ))}
         </div>
         <div className="row-of">
-          {leagues.map((l) => <button key={l} className={"chip" + (league === l ? " on" : "")} onClick={() => setLeague(l)}>{l === "ALL" ? "All" : data!.comps.find((c) => c.code === l)?.name ?? l}</button>)}
+          {leagues.length > 2 && leagues.map((l) => <button key={l} className={"chip" + (league === l ? " on" : "")} onClick={() => setLeague(l)}>{l === "ALL" ? "All" : comps.find((c) => c.code === l)?.name ?? l}</button>)}
         </div>
       </div>
 
       <div className="board-row board-head">
-        <span>{phase === "live" ? "Minute" : phase === "settled" ? "Status" : "Kick-off"}</span>
-        <span className="hide-m">Comp</span>
-        <span>Fixture</span>
+        <span>{phase === "live" ? "Now" : phase === "settled" ? "Status" : "Starts"}</span>
+        <span className="hide-m">Competition</span>
+        <span>Game</span>
         <span className="hide-m">Card</span>
         <span className="hide-m">Playing</span>
         <span className="hide-m">{phase === "upcoming" ? "Deadline" : ""}</span>
         <span></span>
       </div>
-      {rows.length === 0 && <Empty>Nothing here{league !== "ALL" ? " for this competition" : ""}. {phase === "live" ? "No match is in play right now." : phase === "upcoming" ? "Fixtures appear as the provider publishes them." : "Settled cards will show up here after full time."}</Empty>}
+      {loading && !board && <Spinner />}
+      {board && rows.length === 0 && <Empty>Nothing here{league !== "ALL" ? " for this competition" : ""}. {phase === "live" ? "No game is in play right now." : phase === "upcoming" ? "Games appear as soon as they are scheduled." : "Settled cards show up here after the final whistle."}</Empty>}
       {rows.map((r) => {
         const live = r.phase === "live", settled = r.phase === "settled";
+        const mk = marketsOf(r.sport).filter((k) => offered(k, r));
         return (
           <div className="board-row" key={r.match_id}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: live ? "var(--magenta)" : "var(--text)" }}>{live ? (r.minute ? `${r.minute}'` : "Live") : settled ? "FT" : fmtTime(r.utc_date)}</div>
-              <div className="tiny faint">{settled ? fmtDay(r.utc_date) : live ? "" : fmtDay(r.utc_date)}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: live ? "var(--magenta)" : "var(--text)" }}>{live ? liveClock(r) : settled ? (r.sport === "soccer" ? "FT" : "Final") : fmtTime(r.utc_date)}</div>
+              <div className="tiny faint">{live ? "" : fmtDay(r.utc_date)}</div>
             </div>
-            <div className="hide-m tiny muted" style={{ fontWeight: 700 }}>{r.competition_name}</div>
+            <div className="hide-m tiny muted" style={{ fontWeight: 700 }}>
+              {r.competition_name}
+              {r.event_name && <div className="faint" style={{ fontWeight: 400, marginTop: 2 }}>{r.event_name}</div>}
+            </div>
             <div className="tie">
               <b>{r.home_team}</b>
               <span className={"score" + (r.phase === "upcoming" ? " v" : "")}>{r.phase === "upcoming" ? "v" : `${r.home_score ?? 0} – ${r.away_score ?? 0}`}</span>
               <b>{r.away_team}</b>
             </div>
             <div className="hide-m tiny" style={{ fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: r.card_count ? "var(--text-2)" : "var(--mute)" }}>
-              {r.public_card_mode ? (r.public_card_mode === "complex" ? "Complex · 8 calls" : "Simple") : r.card_count ? `${r.card_count} crew card${r.card_count > 1 ? "s" : ""}` : "No card yet"}
+              {r.public_card_mode ? (r.public_card_mode === "complex" ? `Complex · ${mk.length} calls` : `Simple · ${mk.filter((k) => k.simple).length} calls`) : r.card_count ? `${r.card_count} crew card${r.card_count > 1 ? "s" : ""}` : "No card yet"}
             </div>
             <div className="hide-m small">
               <span className="bar" style={{ width: Math.max(6, Math.min(48, Math.round(Math.sqrt(r.playing) * 1.3))), background: r.playing ? "var(--lime)" : "var(--line)" }} />
@@ -94,19 +115,25 @@ export default function Board() {
   );
 }
 
+const listOf = (ks: Market[]) => {
+  const t = ks.map((k) => k.title.replace(/^The /, "the ").replace(/^A /, "a ").replace(/^An /, "an "));
+  return t.length <= 1 ? t.join("") : `${t.slice(0, -1).join(", ")} and ${t[t.length - 1]}`;
+};
+
 // §5.6 "Opening a card": pick the audience, pick the scoring
 export function CreateCardDialog({ row, onClose, onDone, defaultCrew }: { row: BoardRow; onClose: () => void; onDone: (cardId: string) => void; defaultCrew?: string | null }) {
   const [mode, setMode] = useState<"simple" | "complex">("complex");
   const [audience, setAudience] = useState<string | null>(defaultCrew ?? null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const { data } = useLoad(async () => ({ crews: await getMyCrews(), markets: await getMarkets() }), []);
-  const max = (m: "simple" | "complex") => (data?.markets ?? []).filter((k) => m === "complex" || k.simple).reduce((s, k) => s + k.points, 0);
-  const count = (m: "simple" | "complex") => (data?.markets ?? []).filter((k) => m === "complex" || k.simple).length;
+  const { data } = useLoad(async () => ({ crews: await getMyCrews(), markets: (await getMarkets(row.sport)).filter((k) => offered(k, row)) }), [row.sport]);
+  const on = (m: "simple" | "complex") => (data?.markets ?? []).filter((k) => m === "complex" || k.simple);
+  const max = (m: "simple" | "complex") => on(m).reduce((s, k) => s + k.points, 0);
   const create = async () => {
     setBusy(true); setErr(null);
     try { onDone(await openCard(row.match_id, mode, audience)); } catch (e: any) { setErr(e.message); setBusy(false); }
   };
+  const simpleKs = on("simple"), extraKs = on("complex").filter((k) => !k.simple);
   return (
     <Modal title={`Open a card`} onClose={onClose}>
       <div className="eyebrow">{row.competition_name} · {fmtDay(row.utc_date)} {fmtTime(row.utc_date)}</div>
@@ -114,8 +141,8 @@ export function CreateCardDialog({ row, onClose, onDone, defaultCrew }: { row: B
       <div className="eyebrow" style={{ marginBottom: 8 }}>Scoring</div>
       {(["simple", "complex"] as const).map((m) => (
         <button key={m} className={"choice" + (mode === m ? " on" : "")} onClick={() => setMode(m)}>
-          <b>{m === "simple" ? `Simple · ${count("simple")} calls` : `Complex · ${count("complex")} calls`}</b>
-          <small>{m === "simple" ? `The winner and the draw. Maximum ${max("simple")} points.` : `Adds the scoreline, a scorer, an assist, a yellow and a red. Maximum ${max("complex")}.`}</small>
+          <b>{m === "simple" ? `Simple · ${on("simple").length} calls` : `Complex · ${on("complex").length} calls`}</b>
+          <small>{m === "simple" ? `${listOf(simpleKs).replace(/^./, (c) => c.toUpperCase())}. Maximum ${max("simple")} points.` : `Adds ${listOf(extraKs)}. Maximum ${max("complex")}.`}</small>
         </button>
       ))}
       <div className="eyebrow" style={{ margin: "14px 0 8px" }}>Who plays it</div>

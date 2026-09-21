@@ -1,7 +1,7 @@
 // §5.6 The crew room: cards open this week, season table, crew-v-crew, invite code, feed
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { challengeCrew, crewScore, getBoard, getCrew, getCrewCards, getCrewInviteCode, getCrewMembers, getCrewPosts, getMarkets, leaderboard, post } from "../lib/api";
+import { challengeCrew, crewScore, getMatches, getCrew, getCrewCards, getCrewInviteCode, getCrewMembers, getCrewPosts, getMarkets, leaderboard, post } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { ago, countdown, plural } from "../lib/format";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
@@ -18,9 +18,10 @@ export default function CrewRoom() {
   const { data, error, loading, reload } = useLoad(async () => {
     const crew = await getCrew(id!);
     if (!crew) throw new Error("You are not in this crew.");
-    const [members, table, cards, posts, board, markets, us, code] = await Promise.all([
-      getCrewMembers(crew.id), leaderboard("crew", crew.id), getCrewCards(crew.id), getCrewPosts(crew.id), getBoard(), getMarkets(), crewScore(crew.id), getCrewInviteCode(crew.id),
+    const [members, table, cards, posts, markets, us, code] = await Promise.all([
+      getCrewMembers(crew.id), leaderboard("crew", crew.id), getCrewCards(crew.id), getCrewPosts(crew.id), getMarkets(), crewScore(crew.id), getCrewInviteCode(crew.id),
     ]);
+    const board = await getMatches(cards.map((c) => c.match_id));   // just this crew's games
     const rival = crew.rival_crew_id ? await getCrew(crew.rival_crew_id) : null;
     const them = crew.rival_crew_id ? await crewScore(crew.rival_crew_id) : 0;
     return { crew, members, table, cards, posts, board, markets, us, them, rival, code };
@@ -65,7 +66,7 @@ export default function CrewRoom() {
               <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: "1px solid var(--raise)", flexWrap: "wrap" }}>
                 <div>
                   <b>{m!.home_team} v {m!.away_team}</b>
-                  <div className="tiny muted">{m!.competition_name} · {markets.filter((k) => c.mode === "complex" || k.simple).length} calls · {upcoming ? `locks ${countdown(m!.utc_date, now)}` : m!.phase === "live" ? "in play" : "settling"}</div>
+                  <div className="tiny muted">{m!.competition_name} · {markets.filter((k) => k.sport === m!.sport && (c.mode === "complex" || k.simple)).length} calls · {upcoming ? `locks ${countdown(m!.utc_date, now)}` : m!.phase === "live" ? "in play" : "settling"}</div>
                   <div className="small" style={{ marginTop: 4 }}><span className={filled < members.length ? "magenta" : "lime"}>{filled} of {members.length} filled in</span></div>
                 </div>
                 <div className="row-of">

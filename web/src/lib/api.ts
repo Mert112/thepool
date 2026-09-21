@@ -1,8 +1,9 @@
 // Thin data layer over Supabase. Every write goes through an rpc_* function in the database.
 import { supabase } from "./supabase";
 
-export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red";
-export type Market = { call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
+export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "margin" | "top_scorer" | "sets" | "distance" | "method" | "round";
+export type Sport = { code: string; name: string; sort_order: number };
+export type Market = { sport: string; options: string[] | null; call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
 export type BoardRow = {
   match_id: number; competition_code: string; competition_name: string; season: string | null; utc_date: string; status: string; minute: number | null;
   home_score: number | null; away_score: number | null; ft_home: number | null; ft_away: number | null; duration: string | null;
@@ -10,9 +11,11 @@ export type BoardRow = {
   away_team_id: number; away_team: string; away_short: string | null; away_crest: string | null;
   public_card_id: string | null; public_card_mode: "simple" | "complex" | null; public_card_status: string | null;
   card_count: number; playing: number; phase: "live" | "upcoming" | "settled";
+  sport: string; sport_name: string; clock: string | null; event_name: string | null; home_periods: number[] | null; away_periods: number[] | null;
+  total_line: number | null; best_of: number | null; result_detail: { winner?: string; method?: string; round?: string; retired?: boolean };
 };
 export type Card = { id: string; match_id: number; mode: "simple" | "complex"; crew_id: string | null; created_by: string | null; status: "open" | "locked" | "live" | "settled" | "disputed"; crews?: { name: string } | null };
-export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
+export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
 export type Entry = { id: string; card_id: string; user_id: string; boost_call_type: CallType | null; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null } };
 export type Player = { id: number; team_id: number | null; name: string; position: string | null };
 export type Crew = { id: string; name: string; description: string | null; mode: "simple" | "complex"; owner_id: string; rival_crew_id: string | null; created_at: string };
@@ -21,15 +24,49 @@ export type MatchEvent = { id: number; type: "goal" | "yellow" | "red" | "yellow
 
 const fail = (e: any) => { throw new Error(e?.message ?? String(e)); };
 
-export async function getMarkets(): Promise<Market[]> {
-  const { data, error } = await supabase.from("markets").select("*").eq("enabled", true).order("sort_order");
+// markets for one sport (a card's), or every sport's when omitted
+export async function getMarkets(sport?: string): Promise<Market[]> {
+  let q = supabase.from("markets").select("*").eq("enabled", true);
+  if (sport) q = q.eq("sport", sport);
+  const { data, error } = await q.order("sort_order");
   if (error) fail(error);
   return data as Market[];
 }
 
-export async function getBoard(): Promise<BoardRow[]> {
-  const from = new Date(Date.now() - 4 * 86400000).toISOString();
-  const { data, error } = await supabase.from("v_board").select("*").gte("utc_date", from).order("utc_date");
+export async function getSports(): Promise<Sport[]> {
+  const { data, error } = await supabase.from("sports").select("*").order("sort_order");
+  if (error) fail(error);
+  return data as Sport[];
+}
+
+// The board: two days back to a week out, optionally one sport. Paged past the API's 1000-row cap.
+export async function getBoard(sport?: string): Promise<BoardRow[]> {
+  const from = new Date(Date.now() - 2 * 86400000).toISOString();
+  const to = new Date(Date.now() + 8 * 86400000).toISOString();
+  const rows: BoardRow[] = [];
+  for (let page = 0; page < 10; page++) {
+    let q = supabase.from("v_board").select("*").gte("utc_date", from).lte("utc_date", to);
+    if (sport) q = q.eq("sport", sport);
+    const { data, error } = await q.order("utc_date").order("match_id").range(page * 1000, page * 1000 + 999);
+    if (error) fail(error);
+    rows.push(...(data as BoardRow[]));
+    if ((data ?? []).length < 1000) break;
+  }
+  return rows;
+}
+
+// live games per sport, for the counts on the sport filter
+export async function getLiveCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.from("v_board").select("sport").eq("phase", "live");
+  if (error) fail(error);
+  const out: Record<string, number> = {};
+  for (const r of (data ?? []) as Array<{ sport: string }>) out[r.sport] = (out[r.sport] ?? 0) + 1;
+  return out;
+}
+
+export async function getMatches(ids: number[]): Promise<BoardRow[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase.from("v_board").select("*").in("match_id", ids);
   if (error) fail(error);
   return data as BoardRow[];
 }
@@ -163,7 +200,7 @@ export async function challengeCrew(crewId: string, code: string) {
 
 // standings
 export type LbRow = { user_id: string; display_name: string | null; points: number; points_prev: number; cards: number; hits: number; calls: number; hit_rate: number; best_call: CallType | null; best_points: number | null };
-export async function leaderboard(scope: "overall" | "competition" | "crew" | "week", key?: string): Promise<LbRow[]> {
+export async function leaderboard(scope: "overall" | "competition" | "crew" | "week" | "sport", key?: string): Promise<LbRow[]> {
   const { data, error } = await supabase.rpc("leaderboard", { p_scope: scope, p_key: key ?? null });
   if (error) fail(error);
   return (data ?? []) as LbRow[];
@@ -179,9 +216,9 @@ export async function getStickers() {
   return (data ?? []) as Array<{ competition_code: string; season: string; call_type: CallType; earned_at: string }>;
 }
 export async function getCompetitions() {
-  const { data, error } = await supabase.from("competitions").select("code, name, season, sort_order").order("sort_order");
+  const { data, error } = await supabase.from("competitions").select("code, name, season, sort_order, sport").eq("active", true).order("sort_order");
   if (error) fail(error);
-  return (data ?? []) as Array<{ code: string; name: string; season: string | null; sort_order: number }>;
+  return (data ?? []) as Array<{ code: string; name: string; season: string | null; sort_order: number; sport: string }>;
 }
 
 // profile & settings

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getCard, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, saveCalls, setBoost, type Call, type CallType, type Market } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, soon } from "../lib/format";
+import { isPlayerMarket, offered, pickText as describe, setScores, teamName as nameOf } from "../lib/calls";
 import { Bar, Empty, ErrorBox, Pips, Spinner } from "../components/ui";
 
 type Picks = Partial<Record<CallType, Call>>;
@@ -24,9 +25,10 @@ export default function FillCard() {
   const { data, error, loading } = useLoad(async () => {
     const card = await getCard(id!);
     if (!card) throw new Error("This card does not exist or is not yours to see.");
-    const [match, markets, entry, crowd] = await Promise.all([getMatch(card.match_id), getMarkets(), getMyEntry(card.id, uid), getCrowd(card.id)]);
-    const squads = match ? await getSquads(match.home_team_id, match.away_team_id) : [];
-    return { card, match: match!, markets: markets.filter((k) => card.mode === "complex" || k.simple), entry, crowd, squads };
+    const match = await getMatch(card.match_id);
+    if (!match) throw new Error("Fixture missing.");
+    const [markets, entry, crowd, squads] = await Promise.all([getMarkets(match.sport), getMyEntry(card.id, uid), getCrowd(card.id), getSquads(match.home_team_id, match.away_team_id)]);
+    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entry, crowd, squads };
   }, [id]);
 
   // hydrate from the saved entry
@@ -50,7 +52,7 @@ export default function FillCard() {
     if (!data) return;
     setSaving(true); setErr(null);
     try {
-      const calls = Object.values(picks).map((c) => ({ call_type: c.call_type, team_id: c.team_id ?? null, yes: c.yes ?? null, player_id: c.player_id ?? null, home_goals: c.home_goals ?? null, away_goals: c.away_goals ?? null }));
+      const calls = Object.values(picks).map((c) => ({ call_type: c.call_type, team_id: c.team_id ?? null, yes: c.yes ?? null, player_id: c.player_id ?? null, home_goals: c.home_goals ?? null, away_goals: c.away_goals ?? null, pick: c.pick ?? null }));
       await saveCalls(data.card.id, calls);
       await setBoost(data.card.id, boost);
       setSaved(true);
@@ -62,10 +64,13 @@ export default function FillCard() {
   if (error) return <ErrorBox msg={error} />;
   const { card, match, markets, crowd, squads } = data!;
   if (!match) return <Empty>Fixture missing.</Empty>;
-  const teamName = (t: number) => (t === match.home_team_id ? match.home_team : match.away_team);
+  const teamName = (t: number) => nameOf(match, t);
   const playerName = (pid: number | null | undefined) => squads.find((p) => p.id === pid)?.name ?? "";
   const crowdFor = (ct: CallType) => crowd.filter((c) => c.call_type === ct).sort((a, b) => b.n - a.n);
-  const pickText = (c: Call) => c.call_type === "winner" ? teamName(c.team_id!) : c.call_type === "draw" ? (c.yes ? "Yes" : "No") : c.call_type === "score" ? `${c.home_goals}–${c.away_goals}` : playerName(c.player_id);
+  const pickText = (c: Call) => describe(c, match, playerName);
+  const sides = [match.home_team_id, match.away_team_id];
+  const distanceLabels = match.sport === "tennis" ? ["Yes — a deciding set", "No — it ends early"] : ["Yes — to the judges", "No — someone finishes it"];
+  const opt = (k: CallType, on: boolean, label: string, v: Call) => <button key={label} disabled={!editable} className={"opt" + (on ? " on" : "")} onClick={() => set(k, on ? null : v)}>{label}</button>;
 
   return (
     <div>
@@ -96,6 +101,43 @@ export default function FillCard() {
                     {[match.home_team_id, match.away_team_id].map((t) => <button key={t} disabled={!editable} className={"opt" + (cur?.team_id === t ? " on" : "")} onClick={() => set("winner", cur?.team_id === t ? null : { call_type: "winner", team_id: t })}>{teamName(t)}</button>)}
                   </div>
                 )}
+                {k.call_type === "total" && (
+                  <div className="opts">
+                    {opt("total", cur?.yes === true, `Over ${match.total_line}`, { call_type: "total", yes: true, line: match.total_line })}
+                    {opt("total", cur?.yes === false, `Under ${match.total_line}`, { call_type: "total", yes: false, line: match.total_line })}
+                  </div>
+                )}
+                {k.call_type === "distance" && (
+                  <div className="opts">
+                    {opt("distance", cur?.yes === true, distanceLabels[0], { call_type: "distance", yes: true })}
+                    {opt("distance", cur?.yes === false, distanceLabels[1], { call_type: "distance", yes: false })}
+                  </div>
+                )}
+                {k.call_type === "margin" && (
+                  <div className="stack" style={{ marginTop: 14, gap: 8 }}>
+                    {sides.map((t) => (
+                      <div key={t} className="row-of">
+                        <span className="small" style={{ fontWeight: 700, minWidth: 140 }}>{teamName(t)} by</span>
+                        {(k.options ?? []).map((b) => { const on = cur?.team_id === t && cur?.pick === b; return <button key={b} disabled={!editable} className={"opt" + (on ? " on" : "")} style={{ flex: "none", minWidth: 64 }} onClick={() => set("margin", on ? null : { call_type: "margin", team_id: t, pick: b })}>{b}</button>; })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {k.call_type === "sets" && (
+                  <div className="opts">
+                    {setScores(match.best_of).map(([h, a]) => opt("sets", cur?.home_goals === h && cur?.away_goals === a, `${teamName(h > a ? match.home_team_id : match.away_team_id)} ${Math.max(h, a)}–${Math.min(h, a)}`, { call_type: "sets", home_goals: h, away_goals: a }))}
+                  </div>
+                )}
+                {k.call_type === "method" && (
+                  <div className="opts">
+                    {(k.options ?? []).map((m) => opt("method", cur?.pick === m, m, { call_type: "method", pick: m }))}
+                  </div>
+                )}
+                {k.call_type === "round" && (
+                  <div className="opts">
+                    {Array.from({ length: match.best_of ?? 3 }, (_, i) => String(i + 1)).map((r) => opt("round", cur?.pick === r, `Round ${r}`, { call_type: "round", pick: r }))}
+                  </div>
+                )}
                 {k.call_type === "draw" && (
                   <div className="opts">
                     <button disabled={!editable} className={"opt" + (cur?.yes === true ? " on" : "")} onClick={() => set("draw", cur?.yes === true ? null : { call_type: "draw", yes: true })}>Yes — level at 90</button>
@@ -117,7 +159,7 @@ export default function FillCard() {
                     {cur && <button className="btn ghost" disabled={!editable} onClick={() => set("score", null)}>Clear</button>}
                   </div>
                 )}
-                {["scorer", "assist", "yellow", "red", "motm"].includes(k.call_type) && (
+                {isPlayerMarket(k) && (
                   <div className="row-of" style={{ marginTop: 14 }}>
                     <select className="select" style={{ width: 220 }} disabled={!editable} value={sd} onChange={(e) => { setSide((s) => ({ ...s, [k.call_type]: e.target.value as "h" | "a" })); set(k.call_type, null); }}>
                       <option value="h">{match.home_team} (home)</option>
@@ -127,7 +169,7 @@ export default function FillCard() {
                       <option value="">— pick a player —</option>
                       {squad.map((p) => <option key={p.id} value={p.id}>{p.name}{p.position ? ` · ${p.position}` : ""}</option>)}
                     </select>
-                    {squad.length === 0 && <span className="tiny magenta">Squad not loaded yet for this side.</span>}
+                    {squad.length === 0 && <span className="tiny magenta">Squad still loading for this side — check back in a minute.</span>}
                   </div>
                 )}
 

@@ -1,9 +1,10 @@
 // §5.5 Live and full time: score, match log, your card with per-call state, standings, receipt.
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getCard, getCrewPosts, getEntries, getEvents, getMarkets, getMatch, getSquads, post, type Call, type Entry } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
 import { ago, ord, plural } from "../lib/format";
+import { liveClock, offered, pickText as describe } from "../lib/calls";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 
 export default function LiveCard() {
@@ -14,11 +15,13 @@ export default function LiveCard() {
   const { data, error, loading, reload } = useLoad(async () => {
     const card = await getCard(id!);
     if (!card) throw new Error("Card not found.");
-    const [match, markets, entries, events, posts] = await Promise.all([
-      getMatch(card.match_id), getMarkets(), getEntries(card.id), getEvents(card.match_id), card.crew_id ? getCrewPosts(card.crew_id) : Promise.resolve([]),
+    const match = await getMatch(card.match_id);
+    if (!match) throw new Error("Fixture missing.");
+    const [markets, entries, events, posts, squads] = await Promise.all([
+      getMarkets(match.sport), getEntries(card.id), getEvents(card.match_id), card.crew_id ? getCrewPosts(card.crew_id) : Promise.resolve([]),
+      getSquads(match.home_team_id, match.away_team_id),
     ]);
-    const squads = match ? await getSquads(match.home_team_id, match.away_team_id) : [];
-    return { card, match: match!, markets: markets.filter((k) => card.mode === "complex" || k.simple), entries, events, posts, squads };
+    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entries, events, posts, squads };
   }, [id]);
 
   // poll while live
@@ -37,13 +40,11 @@ export default function LiveCard() {
   const ranked = [...entries].sort((a, b) => b.points - a.points || b.hits - a.hits);
   const myPos = ranked.findIndex((e) => e.user_id === uid) + 1;
   const callOf = (e: Entry, ct: string) => e.calls.find((c) => c.call_type === ct);
-  const pickText = (c: Call | undefined) => {
-    if (!c) return "No pick";
-    if (c.call_type === "winner") return c.team_id === match.home_team_id ? match.home_team : match.away_team;
-    if (c.call_type === "draw") return c.yes ? "Yes" : "No";
-    if (c.call_type === "score") return `${c.home_goals}–${c.away_goals}`;
-    return squads.find((p) => p.id === c.player_id)?.name ?? events.find((e) => (e as any).player_id === c.player_id)?.player_name ?? "Player";
-  };
+  const pickText = (c: Call | undefined) => describe(c, match, (pid) => squads.find((p) => p.id === pid)?.name ?? events.find((e) => (e as any).player_id === pid)?.player_name ?? "");
+  const soccer = match.sport === "soccer";
+  const periodLabel = (i: number) => match.sport === "baseball" ? String(i + 1) : match.sport === "tennis" ? `S${i + 1}` : match.sport === "hockey" ? (i < 3 ? `P${i + 1}` : "OT") : match.sport === "mma" ? `R${i + 1}` : i < 4 ? `Q${i + 1}` : "OT";
+  const periods = match.home_periods?.length && match.away_periods?.length ? Math.max(match.home_periods.length, match.away_periods.length) : 0;
+  const detail = match.result_detail ?? {};
   const stateOf = (c: Call | undefined, k: { settles_on: string }) => !c ? "No pick" : c.result === "hit" ? "Hit" : c.result === "miss" ? "Missed" : c.result === "void" ? "Void" : settled ? "Missed" : k.settles_on === "event" ? "Running" : "Open";
   const best = mine ? [...mine.calls].filter((c) => c.result === "hit").sort((a, b) => (b.points_awarded ?? 0) - (a.points_awarded ?? 0))[0] : undefined;
   const bestMarket = best ? markets.find((k) => k.call_type === best.call_type) : undefined;
@@ -54,10 +55,23 @@ export default function LiveCard() {
     <div className="grid two">
       <div className="stack">
         <div className="panel">
-          <div className="eyebrow">{match.competition_name} · {card.crew_id ? card.crews?.name : "Open card"} · {live ? <span className="magenta">{match.minute ? `${match.minute}'` : "Live"}</span> : settled ? "Full time" : "Locked · waiting for kick-off"}</div>
+          <div className="eyebrow">{match.competition_name} · {card.crew_id ? card.crews?.name : "Open card"} · {live ? <span className="magenta">{liveClock(match)}</span> : settled ? (soccer ? "Full time" : "Final") : soccer ? "Locked · waiting for kick-off" : "Locked · waiting for the start"}</div>
+          {match.event_name && <div className="tiny muted" style={{ marginTop: 4 }}>{match.event_name}</div>}
           <div className="scoreline" style={{ margin: "10px 0" }}>{match.home_score ?? 0} – {match.away_score ?? 0}</div>
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span>{match.home_team}</span><span>{match.away_team}</span></div>
-          {match.ft_home != null && match.duration && match.duration !== "REGULAR" && <div className="tiny muted" style={{ marginTop: 6 }}>After extra time / penalties: {match.ft_home}–{match.ft_away}. Calls settle on the 90-minute score above.</div>}
+          {soccer && match.ft_home != null && match.duration && match.duration !== "REGULAR" && <div className="tiny muted" style={{ marginTop: 6 }}>After extra time / penalties: {match.ft_home}–{match.ft_away}. Calls settle on the 90-minute score above.</div>}
+          {periods > 0 && match.sport !== "mma" && (
+            <div className="periods" style={{ gridTemplateColumns: `minmax(0,1fr) repeat(${periods}, 28px)` }}>
+              <span className="h"></span>{Array.from({ length: periods }, (_, i) => <span key={i} className="h">{periodLabel(i)}</span>)}
+              {([["home", match.home_team, match.home_periods!], ["away", match.away_team, match.away_periods!]] as const).map(([k, name, ps]) => (
+                <Fragment key={k}><span className="t">{name}</span>{Array.from({ length: periods }, (_, i) => <span key={i}>{ps[i] ?? ""}</span>)}</Fragment>
+              ))}
+            </div>
+          )}
+          {settled && match.sport === "mma" && detail.method && <div className="small muted" style={{ marginTop: 8 }}>{detail.method}{detail.method !== "Decision" && detail.round ? ` · round ${detail.round}` : ""}</div>}
+          {settled && match.sport === "mma" && detail.winner === "none" && <div className="small muted" style={{ marginTop: 8 }}>Draw or no contest — winner and method calls are void.</div>}
+          {settled && match.sport === "tennis" && detail.retired && <div className="small muted" style={{ marginTop: 8 }}>Ended by retirement or walkover — set calls are void; the winner stands.</div>}
+          {!live && !settled && match.total_line != null && <div className="tiny muted" style={{ marginTop: 8 }}>Line on this game: {match.total_line}</div>}
         </div>
 
         {settled && mine && (
@@ -84,10 +98,10 @@ export default function LiveCard() {
             );
           })}
           {mine && <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}><span className="muted small">{settled ? "Final" : "Banked so far"}</span><span className="num lime" style={{ fontSize: 28 }}>{mine.points}</span></div>}
-          {mine && live && <div className="tiny muted" style={{ marginTop: 6 }}>Result calls (winner, draw, scoreline) stay open until full time even if they look right now.</div>}
+          {mine && live && <div className="tiny muted" style={{ marginTop: 6 }}>{soccer ? "Result calls (winner, draw, scoreline) stay open until full time even if they look right now." : "Result calls stay open until the final result. Player calls land the moment they happen."}</div>}
         </div>
 
-        <div className="panel">
+        {soccer && <div className="panel">
           <div className="eyebrow" style={{ marginBottom: 8 }}>Match log</div>
           {events.length === 0 && <div className="muted small">Nothing yet.</div>}
           {events.map((e) => (
@@ -99,7 +113,7 @@ export default function LiveCard() {
               </div>
             </div>
           ))}
-        </div>
+        </div>}
       </div>
 
       <div className="stack">
@@ -126,7 +140,7 @@ export default function LiveCard() {
                 <Avatar name={p.profiles?.display_name} me={p.user_id === uid} sm />
                 <div><span className="who">{p.user_id === uid ? "You" : p.profiles?.display_name}</span><span className="when">{ago(p.created_at)}</span>
                   {p.body && <div className="small">{p.body}</div>}
-                  {p.calls && <div className="receipt">Called {p.calls.call_type} · +{p.calls.points_awarded}</div>}
+                  {p.calls && <div className="receipt">Called {markets.find((k) => k.call_type === p.calls!.call_type)?.short ?? p.calls.call_type} · +{p.calls.points_awarded}</div>}
                 </div>
               </div>
             ))}
