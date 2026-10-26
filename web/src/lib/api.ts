@@ -3,7 +3,9 @@ import { supabase } from "./supabase";
 
 // The Pool is football only (0017). These are the eight live markets, plus the two kept disabled.
 export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "spread";
-export type Market = { options: string[] | null; default_price: number | null; option_mult: Record<string, number> | null; call_type: CallType; title: string; short: string; description: string; explainer: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
+export type Market = { options: string[] | null; option_mult: Record<string, number> | null; pick_multiplier: Record<string, number> | null;
+  multiplier: number; call_type: CallType; title: string; short: string; description: string; explainer: string;
+  simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
 export type BoardRow = {
   match_id: number; competition_code: string; competition_name: string; season: string | null; utc_date: string; status: string; minute: number | null;
   home_score: number | null; away_score: number | null; ft_home: number | null; ft_away: number | null; duration: string | null;
@@ -19,11 +21,13 @@ export type BoardRow = {
 export type Odds = { provider?: string | null; home?: number; away?: number; draw?: number;
   spread?: { home_line: number; home: number; away: number }; total?: { line: number; over: number; under: number } };
 export type Card = { id: string; match_id: number; mode: "simple" | "complex"; crew_id: string | null; created_by: string | null; status: "open" | "locked" | "live" | "settled" | "disputed"; crews?: { name: string } | null };
-export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; price?: number | null; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
-export type Entry = { id: string; card_id: string; user_id: string; boost_call_type: CallType | null; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null } };
+export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; stake?: number; multiplier?: number; staked?: boolean; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
+export type Entry = { id: string; card_id: string; user_id: string; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null } };
+// the five stakes a call can carry, from pool.stakes
+export const STAKES = [10, 25, 50, 100, 200] as const;
 export type Player = { id: number; team_id: number | null; name: string; position: string | null };
 export type Crew = { id: string; name: string; description: string | null; mode: "simple" | "complex"; owner_id: string; rival_crew_id: string | null; created_at: string };
-export type Profile = { id: string; display_name: string | null; streak: number };
+export type Profile = { id: string; display_name: string | null; streak: number; balance: number };
 export type MatchEvent = { id: number; type: "goal" | "yellow" | "red" | "yellow_red"; minute: number; injury_time: number | null; team_id: number; player_name: string; assist_name: string | null; own_goal: boolean; counts: boolean };
 
 const fail = (e: any) => { throw new Error(e?.message ?? String(e)); };
@@ -115,9 +119,34 @@ export async function saveCalls(cardId: string, calls: Call[]) {
   if (error) fail(error);
   return data as string;
 }
-export async function setBoost(cardId: string, call: CallType | null) {
-  const { error } = await supabase.rpc("rpc_set_boost", { p_card: cardId, p_call: call });
+// feature flags (pool.app_flags): the rewarded-ad stub hides behind one
+export async function getFlag(key: string): Promise<boolean> {
+  const { data, error } = await supabase.from("app_flags").select("enabled").eq("key", key).maybeSingle();
   if (error) fail(error);
+  return !!(data as { enabled: boolean } | null)?.enabled;
+}
+
+// §4 the point economy — every balance movement happens inside one of these
+export async function watchAd(): Promise<{ credited: number; watched_today: number; left_today: number; balance: number }> {
+  const { data, error } = await supabase.rpc("rpc_watch_ad");
+  if (error) fail(error);
+  return data as { credited: number; watched_today: number; left_today: number; balance: number };
+}
+export async function claimPrize(): Promise<string> {
+  const { data, error } = await supabase.rpc("rpc_claim_prize");
+  if (error) fail(error);
+  return data as string;
+}
+export async function myCommittedStake(): Promise<number> {
+  const { data, error } = await supabase.rpc("my_committed_stake");
+  if (error) fail(error);
+  return Number(data ?? 0);
+}
+export type LedgerRow = { amount: number; reason: "signup" | "stake" | "win" | "refund" | "ad_reward" | "prize"; created_at: string };
+export async function myLedger(limit = 30): Promise<LedgerRow[]> {
+  const { data, error } = await supabase.rpc("my_ledger", { p_limit: limit });
+  if (error) fail(error);
+  return (data ?? []) as LedgerRow[];
 }
 
 // crews — only these columns are readable (the invite code comes from crew_invite_code())
@@ -186,16 +215,22 @@ export async function challengeCrew(crewId: string, code: string) {
 }
 
 // standings
-export type LbRow = { user_id: string; display_name: string | null; points: number; points_prev: number; cards: number; hits: number; calls: number; hit_rate: number; best_call: CallType | null; best_points: number | null };
+export type LbRow = { user_id: string; display_name: string | null; balance: number; points: number; points_prev: number; cards: number; hits: number; calls: number; hit_rate: number; best_call: CallType | null; best_points: number | null };
 export async function leaderboard(scope: "overall" | "competition" | "crew" | "week", key?: string): Promise<LbRow[]> {
   const { data, error } = await supabase.rpc("leaderboard", { p_scope: scope, p_key: key ?? null });
   if (error) fail(error);
   return (data ?? []) as LbRow[];
 }
-export async function myStats() {
+export type Stats = {
+  balance: number; points: number; rank: number | null; players: number; cards: number; hit_rate: number; streak: number;
+  committed: number; ads_today: number; ads_left: number; ads_enabled: boolean; prize_target: number;
+  prize_claim: { id: string; status: "pending" | "approved" | "rejected" | "fulfilled"; created_at: string } | null;
+  competitions: Array<{ code: string; name: string; points: number; rank: number }>;
+};
+export async function myStats(): Promise<Stats> {
   const { data, error } = await supabase.rpc("my_stats");
   if (error) fail(error);
-  return data as { points: number; rank: number | null; players: number; cards: number; hit_rate: number; streak: number; competitions: Array<{ code: string; name: string; points: number; rank: number }>; recent: Array<{ match_id: number; home: string; away: string; home_score: number; away_score: number; utc_date: string; points: number; hits: number; mode: string; competition_code: string }> };
+  return data as Stats;
 }
 // the matches this player already has a card on, so the board can say so
 export async function getMyCardMatches(userId: string): Promise<Set<number>> {
@@ -231,7 +266,7 @@ export async function getCompetitions() {
 
 // profile & settings
 export async function getProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase.from("profiles").select("id, display_name, streak").eq("id", userId).maybeSingle();
+  const { data, error } = await supabase.from("profiles").select("id, display_name, streak, balance").eq("id", userId).maybeSingle();
   if (error) fail(error);
   return data as Profile | null;
 }

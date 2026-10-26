@@ -74,17 +74,22 @@ async function render(db: any, n: Row): Promise<{ subject: string; html: string 
     case "correction": {
       const m = await matchLine(db, n.payload.match_id);
       if (!m) return null;
-      const { data: entry } = await db.from("entries").select("id, points, hits, card_id, cards(mode, crew_id, crews(name)), calls(call_type, result, points_awarded)").eq("user_id", n.user_id).eq("card_id", n.payload.card_id ?? "").maybeSingle();
+      const { data: entry } = await db.from("entries").select("id, points, hits, card_id, cards(mode, crew_id, crews(name)), calls(call_type, result, stake, staked, points_awarded)").eq("user_id", n.user_id).eq("card_id", n.payload.card_id ?? "").maybeSingle();
       const { data: lb } = await db.rpc("leaderboard", { p_scope: "overall" });
       const pos = (lb ?? []).findIndex((r: any) => r.user_id === n.user_id) + 1;
       const hits = (entry?.calls ?? []).filter((c: any) => c.result === "hit").map((c: any) => `${esc(c.call_type)} ${lime("+" + c.points_awarded)}`).join(", ") || "nothing landed";
+      // points are a currency now: the card's number is net of the stakes that left the balance
+      const staked = (entry?.calls ?? []).filter((c: any) => c.staked).reduce((t: number, c: any) => t + (c.stake ?? 0), 0);
+      const net = entry ? (entry.points > 0 ? `up ${lime("+" + entry.points)}` : entry.points < 0 ? `down ${entry.points}` : "level") : "";
+      const { data: prof } = await db.from("profiles").select("balance").eq("id", n.user_id).maybeSingle();
       const isFix = n.type === "correction";
       return {
         subject: `${isFix ? "Correction: " : ""}${m.home_team} ${m.home_score} – ${m.away_score} ${m.away_team}`,
         html: shell(`${esc(m.home_team)} ${m.home_score} – ${m.away_score} ${esc(m.away_team)}`,
-          (isFix ? `The provider corrected this match after settlement, so it has been re-scored. Your total moved from ${n.payload.from} to ${lime(n.payload.to)}.<br><br>` : `Full time, ${name}. `) +
-          (entry ? `Your card${entry.cards?.crews?.name ? ` in ${esc(entry.cards.crews.name)}` : ""}: ${lime(entry.points + " points")} from ${entry.hits} calls (${hits}).` : "") +
-          (pos ? `<br>You are ${lime(pos + (pos === 1 ? "st" : pos === 2 ? "nd" : pos === 3 ? "rd" : "th"))} overall.` : ""),
+          (isFix ? `The provider corrected this match after settlement, so it has been re-scored and your balance adjusted. This card moved from ${n.payload.from} to ${lime(n.payload.to)}.<br><br>` : `Full time, ${name}. `) +
+          (entry ? `Your card${entry.cards?.crews?.name ? ` in ${esc(entry.cards.crews.name)}` : ""}: ${staked} staked, ${entry.hits} of ${entry.calls.length} landed (${hits}) — ${net} on the card.` : "") +
+          (prof ? `<br>You hold ${lime(prof.balance.toLocaleString() + " points")}.` : "") +
+          (pos ? ` You are ${lime(pos + (pos === 1 ? "st" : pos === 2 ? "nd" : pos === 3 ? "rd" : "th"))} overall.` : ""),
           { label: "See the recap", href: `${SITE()}/match/${m.match_id}` }),
       };
     }

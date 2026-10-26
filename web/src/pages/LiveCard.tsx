@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { getCard, getCrewPosts, getEntries, getEvents, getMarkets, getMatch, getSquads, post, type Call, type Entry } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
 import { ago, ord, plural } from "../lib/format";
-import { liveClock, offered, pickText as describe, pointsFor, priceOfCall } from "../lib/calls";
+import { fmtMult, liveClock, offered, pickText as describe, multiplierOfCall, returnOf } from "../lib/calls";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 
 export default function LiveCard() {
@@ -44,6 +44,7 @@ export default function LiveCard() {
   const callOf = (e: Entry, ct: string) => e.calls.find((c) => c.call_type === ct);
   const pickText = (c: Call | undefined) => describe(c, match, (pid) => squads.find((p) => p.id === pid)?.name ?? events.find((e) => (e as any).player_id === pid)?.player_name ?? "");
   const stateOf = (c: Call | undefined, k: { settles_on: string }) => !c ? "No pick" : c.result === "hit" ? "Hit" : c.result === "miss" ? "Missed" : c.result === "void" ? "Void" : settled ? "Missed" : k.settles_on === "event" ? "Running" : "Open";
+  const myStaked = mine ? mine.calls.reduce((s, c) => s + (c.staked ? c.stake ?? 0 : 0), 0) : 0;
   const best = mine ? [...mine.calls].filter((c) => c.result === "hit").sort((a, b) => (b.points_awarded ?? 0) - (a.points_awarded ?? 0))[0] : undefined;
   const bestMarket = best ? markets.find((k) => k.call_type === best.call_type) : undefined;
 
@@ -65,7 +66,7 @@ export default function LiveCard() {
           <div className="brag">
             <div className="eyebrow" style={{ color: "#3a3a35" }}>Your receipt</div>
             <div className="display">{bestMarket ? `I called ${bestMarket.short}` : "Nothing landed"}</div>
-            <div style={{ marginTop: 6 }}>{bestMarket ? `${plural(mine.points, "point")}, ${ord(myPos)} of ${entries.length} on this card.` : "Blank card. It happens — the streak survives one."}</div>
+            <div style={{ marginTop: 6 }}>{bestMarket ? `${mine.points > 0 ? "+" : ""}${plural(mine.points, "point")}, ${ord(myPos)} of ${entries.length} on this card.` : `Blank card — ${myStaked} points gone. It happens.`}</div>
           </div>
         )}
 
@@ -78,16 +79,29 @@ export default function LiveCard() {
             const label = pickText(c);
             return (
               <div key={k.call_type} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto 60px", gap: 12, alignItems: "center", padding: "9px 0", borderBottom: "1px solid var(--raise)" }}>
-                <div><div className="small" style={{ fontWeight: 700 }}>{k.title}{mine.boost_call_type === k.call_type && <span className="tag" style={{ marginLeft: 8, borderColor: "var(--magenta)", color: "var(--magenta)" }}>Boost</span>}</div><div className="tiny muted">{label}</div></div>
+                <div>
+                  <div className="small" style={{ fontWeight: 700 }}>{k.title}</div>
+                  <div className="tiny muted">{label}{c ? ` · ${c.stake} at ${fmtMult(multiplierOfCall(k, c))}` : ""}</div>
+                </div>
                 <span className={cls}>{st}</span>
-                <div className="num" style={{ fontSize: 17, textAlign: "right", color: st === "Hit" ? "var(--lime)" : "#4a4a44" }} title={c && st !== "Hit" && st !== "Missed" && st !== "Void" ? "pays if it lands" : undefined}>
-                  {st === "Hit" ? `+${c!.points_awarded}` : c && (st === "Open" || st === "Running") ? <span className="faint">{pointsFor(priceOfCall(k, c, match)) * (mine.boost_call_type === k.call_type ? 2 : 1)}</span> : "0"}
+                <div className="num" style={{ fontSize: 17, textAlign: "right", color: st === "Hit" ? "var(--lime)" : "#4a4a44" }} title={c && st !== "Hit" && st !== "Missed" && st !== "Void" ? "returns this if it lands" : undefined}>
+                  {st === "Hit" ? `+${c!.points_awarded}`
+                    : st === "Void" ? <span className="faint">{c!.staked ? `${c!.stake} back` : "—"}</span>
+                    : c && (st === "Open" || st === "Running") ? <span className="faint">{returnOf(c.stake ?? 0, multiplierOfCall(k, c))}</span> : "0"}
                 </div>
               </div>
             );
           })}
-          {mine && <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}><span className="muted small">{settled ? "Final" : "Banked so far"}</span><span className="num lime" style={{ fontSize: 28 }}>{mine.points}</span></div>}
-          {mine && live && <div className="tiny muted" style={{ marginTop: 6 }}>Result calls (the result, the goals line, the handicap, the scoreline) stay open until full time even if they look right now.</div>}
+          {mine && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span className="muted small">Staked at kick-off</span><span className="num" style={{ fontSize: 20, color: "var(--soft)" }}>{myStaked || "—"}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                <span className="muted small">{settled ? "This card, all in" : "This card so far"}</span>
+                <span className="num" style={{ fontSize: 28, color: mine.points >= 0 ? "var(--lime)" : "var(--magenta)" }}>{mine.points > 0 ? `+${mine.points}` : mine.points}</span>
+              </div>
+            </div>
+          )}
+          {mine && live && <div className="tiny muted" style={{ marginTop: 6 }}>Result calls (the result, the goals line, the handicap, the scoreline) stay open until full time even if they look right now. Your stakes have already left your balance.</div>}
         </div>
 
         <div className="panel">
@@ -113,7 +127,7 @@ export default function LiveCard() {
               <span className="pos">{i + 1}</span>
               <Avatar name={e.profiles?.display_name} me={e.user_id === uid} />
               <span style={{ flex: 1 }} className="small">{e.user_id === uid ? "You" : e.profiles?.display_name ?? "Player"}<span className="tiny muted" style={{ marginLeft: 8 }}>{e.hits} of {e.calls.length}</span></span>
-              <span className="num lime" style={{ fontSize: 20 }}>{e.points}</span>
+              <span className="num" style={{ fontSize: 20, color: e.points >= 0 ? "var(--lime)" : "var(--magenta)" }}>{e.points > 0 ? `+${e.points}` : e.points}</span>
             </div>
           ))}
         </div>

@@ -4,7 +4,9 @@ import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
 import { initials, dateline } from "../lib/format";
-import { myStats, setDisplayName } from "../lib/api";
+import { getFlag, setDisplayName, watchAd } from "../lib/api";
+
+export const AD_SECONDS = 30;
 
 export function Avatar({ name, me, sm }: { name: string | null | undefined; me?: boolean; sm?: boolean }) {
   return <span className={"av" + (me ? " me" : "") + (sm ? " sm" : "")}>{me ? "YO" : initials(name)}</span>;
@@ -45,9 +47,10 @@ export function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) =
 }
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { profile } = useAuth();
-  const [pts, setPts] = useState<{ points: number; streak: number } | null>(null);
-  useEffect(() => { myStats().then((s) => setPts({ points: s.points, streak: s.streak })).catch(() => {}); }, []);
+  const { profile, refreshProfile } = useAuth();
+  const [ads, setAds] = useState(false);
+  const [adsOn, setAdsOn] = useState(false);
+  useEffect(() => { getFlag("rewarded_ads").then(setAdsOn).catch(() => {}); }, []);
   const items: Array<[string, string]> = [["/", "Board"], ["/crews", "Crews"], ["/album", "Album"], ["/table", "Table"], ["/you", "You"]];
   return (
     <div className="wrap">
@@ -57,12 +60,14 @@ export function Shell({ children }: { children: ReactNode }) {
           {items.map(([to, label]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "on" : "")}>{label}</NavLink>)}
         </nav>
         <div className="me">
-          {pts && <span><span className="pts">{pts.points}</span> <span className="tiny">pts</span></span>}
-          {pts && pts.streak > 0 && <span className="tag hit">{pts.streak}-day streak</span>}
+          {profile && <Link to="/you" title="Your points"><span className="pts">{profile.balance.toLocaleString()}</span> <span className="tiny">pts</span></Link>}
+          {adsOn && <button className="btn ghost tiny-btn" onClick={() => setAds(true)}>Get points</button>}
+          {profile && profile.streak > 0 && <span className="tag hit">{profile.streak}-day streak</span>}
           <Link to="/settings" title="Settings"><Avatar name={profile?.display_name} me /></Link>
-          <button className="btn ghost tiny" onClick={() => supabase.auth.signOut()}>Sign out</button>
+          <button className="btn ghost tiny-btn" onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
       </div>
+      {ads && <AdModal onClose={() => { setAds(false); refreshProfile(); }} onCredited={() => refreshProfile()} />}
       <div className="eyebrow" style={{ marginBottom: 10 }}>{dateline()}</div>
       <NamePrompt />
       {children}
@@ -83,6 +88,60 @@ function NamePrompt() {
       <label className="field"><span>Display name</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mina H." autoFocus /></label>
       <ErrorBox msg={err} />
       <button className="btn big" disabled={name.trim().length < 2} onClick={save}>Let me in</button>
+    </Modal>
+  );
+}
+
+// §4 "Get points": a rewarded-video placeholder. The countdown has to run out before the reward
+// can be collected, and the reward itself — 100 points, ten a day — is granted and capped by the
+// database, not here. Swap the panel below for a real provider's player; nothing else moves.
+export function AdModal({ onClose, onCredited }: { onClose: () => void; onCredited: (balance: number) => void }) {
+  const [left, setLeft] = useState(AD_SECONDS);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<{ credited: number; left_today: number } | null>(null);
+
+  useEffect(() => {
+    if (done) return;
+    const t = setInterval(() => setLeft((n) => (n > 0 ? n - 1 : 0)), 1000);
+    return () => clearInterval(t);
+  }, [done]);
+
+  const collect = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await watchAd();
+      setDone({ credited: r.credited, left_today: r.left_today });
+      onCredited(r.balance);
+    } catch (e: any) { setErr(e.message ?? String(e)); }
+    setBusy(false);
+  };
+
+  return (
+    <Modal title="Get points" onClose={onClose}>
+      {done ? (
+        <div>
+          <div className="banner ok" role="status"><b>+{done.credited} points.</b> {done.left_today > 0 ? `${done.left_today} more ${done.left_today === 1 ? "ad" : "ads"} today.` : "That is all ten for today."}</div>
+          <div className="row-of">
+            <button className="btn big" onClick={onClose}>Done</button>
+            {done.left_today > 0 && <button className="btn" onClick={() => { setDone(null); setLeft(AD_SECONDS); }}>Watch another</button>}
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div className="ad-stub">
+            <div className="eyebrow">Advertisement · placeholder</div>
+            <div className="num lime ad-count">{left}</div>
+            <div className="small muted">{left > 0 ? "Watch to the end to collect 100 points." : "Finished. Collect your points."}</div>
+            <div className="ad-progress"><i style={{ width: `${((AD_SECONDS - left) / AD_SECONDS) * 100}%` }} /></div>
+          </div>
+          <p className="tiny muted">A real rewarded-video player goes here. Until then this is a 30-second stand-in: the reward, and the ten-a-day limit, are counted in the database either way.</p>
+          <ErrorBox msg={err} />
+          <button className="btn big" disabled={left > 0 || busy} onClick={collect}>
+            {busy ? "Collecting…" : left > 0 ? `Collect 100 points in ${left}s` : "Collect 100 points"}
+          </button>
+        </div>
+      )}
     </Modal>
   );
 }

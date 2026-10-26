@@ -26,19 +26,17 @@ export const spreadFor = (m: BoardRow, team: number | null | undefined) => { con
 export const offered = (k: Market, m: BoardRow) =>
   k.call_type === "total" ? lineOf(m) != null : k.call_type === "spread" ? m.odds?.spread?.home_line != null : true;
 
-// the price a pick is taken at (mirrors pool.call_price): the board's odds where there are any, else the market's standard price
-export function priceOf(k: Market, c: Partial<Call>, m: BoardRow): number {
-  const o = m.odds ?? {};
-  const p = k.call_type === "winner" ? (c.pick === "draw" ? o.draw : c.team_id === m.home_team_id ? o.home : c.team_id === m.away_team_id ? o.away : undefined)
-    : k.call_type === "total" ? (c.yes ? o.total?.over : c.yes === false ? o.total?.under : undefined)
-    : k.call_type === "spread" ? (c.team_id === m.home_team_id ? o.spread?.home : c.team_id === m.away_team_id ? o.spread?.away : undefined)
-    : undefined;
-  // a narrower call (the red card's time window) multiplies the standard price
-  return p ?? (k.default_price ?? k.points / 10) * (c.pick ? k.option_mult?.[c.pick] ?? 1 : 1);
+// What a call pays back, per point staked (mirrors pool.call_multiplier). The draw has its own
+// multiplier on the 3-way result, and a narrower call — the red card's 15-minute window — scales it.
+export function multiplierOf(k: Market, pick?: string | null): number {
+  if (pick && k.pick_multiplier?.[pick] != null) return k.pick_multiplier[pick];
+  return k.multiplier * (pick ? k.option_mult?.[pick] ?? 1 : 1);
 }
-// points = 10 × price; a saved call keeps the price it was taken at
-export const pointsFor = (price: number) => Math.round(10 * price);
-export const priceOfCall = (k: Market, c: Call, m: BoardRow) => c.price ?? priceOf(k, c, m);
+// a saved call keeps the multiplier it was taken at
+export const multiplierOfCall = (k: Market, c: Call) => c.multiplier ?? multiplierOf(k, c.pick);
+// a landed call returns the stake times the multiplier
+export const returnOf = (stake: number, multiplier: number) => Math.round(stake * multiplier);
+export const fmtMult = (m: number) => `${Number(m.toFixed(2))}×`;
 
 export const squadOf = (squads: Player[], teamId: number) => squads.filter((p) => p.team_id === teamId);
 
@@ -59,13 +57,10 @@ export function clashes(a: Call, b: Call, m: BoardRow): boolean {
   return false;
 }
 
-// what a market pays on this match: one number, or the range across its options
-export function pointsRange(k: Market, m: BoardRow): string {
-  const vs: Partial<Call>[] = k.call_type === "winner" ? [{ team_id: m.home_team_id }, { team_id: m.away_team_id }, { pick: "draw" }]
-    : k.call_type === "total" ? [{ yes: true }, { yes: false }]
-    : k.call_type === "spread" ? [{ team_id: m.home_team_id }, { team_id: m.away_team_id }]
-    : k.option_mult ? [{}, ...Object.keys(k.option_mult).map((pick) => ({ pick }))] : [{}];
-  const ps = vs.map((v) => pointsFor(priceOf(k, v, m)));
-  const lo = Math.min(...ps), hi = Math.max(...ps);
-  return lo === hi ? String(lo) : `${lo}–${hi}`;
+// what a market pays per point staked: one multiplier, or the range across its options
+export function multiplierRange(k: Market): string {
+  const picks: Array<string | null> = [null, ...Object.keys(k.pick_multiplier ?? {}), ...Object.keys(k.option_mult ?? {})];
+  const ms = picks.map((p) => multiplierOf(k, p));
+  const lo = Math.min(...ms), hi = Math.max(...ms);
+  return lo === hi ? fmtMult(lo) : `${Number(lo.toFixed(2))}–${fmtMult(hi)}`;
 }

@@ -121,8 +121,12 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 .stepper { display: flex; align-items: center; gap: 10px; }
 .stepper button { width: 40px; height: 40px; border-radius: 10px; border: 2px solid var(--line); background: transparent; color: var(--text); font-size: 20px; }
 .stepper .n { font-family: var(--display); font-size: 36px; width: 44px; text-align: center; color: var(--lime); }
-.boost { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--soft); }
-.boost.on { border-color: var(--magenta); background: var(--magenta); color: var(--ink); }
+/* the stake on a call: five chips and what the call returns at that stake */
+.stake-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--raise); }
+.chip.stake { font-family: var(--display); font-size: 15px; letter-spacing: 0.02em; padding: 7px 14px; min-width: 52px; text-align: center; }
+.chip.stake.on { border-color: var(--lime); background: var(--lime); color: var(--ink); }
+.stake-pay { margin-left: auto; font-size: 12px; color: var(--soft); }
+.stake-pay b { font-family: var(--display); font-size: 17px; color: var(--lime); margin: 0 2px; }
 .crowd { margin-top: 12px; font-size: 12px; color: var(--soft); }
 .crowd .bar { height: 4px; margin-top: 6px; max-width: 320px; }
 
@@ -229,7 +233,7 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 .page { animation: rise 0.45s var(--ease) backwards; }
 
 /* interactive surfaces share one feel: colour eases, press gives, hover lifts a hair */
-.pill, .chip, .btn, .opt, .boost, .choice, .nav a, .stepper button, .remove-call, .ticker > div, .switch, .switch i, .input, .select, .textarea {
+.pill, .chip, .btn, .opt, .choice, .nav a, .stepper button, .remove-call, .ticker > div, .switch, .switch i, .input, .select, .textarea {
   transition: background-color 0.18s var(--ease), border-color 0.18s var(--ease), color 0.18s var(--ease), transform 0.18s var(--ease), box-shadow 0.25s var(--ease);
 }
 .pill:hover:not(.on), .chip:hover:not(.on) { border-color: var(--soft); color: var(--text); }
@@ -237,7 +241,7 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 .btn:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--soft); }
 .btn.primary:hover:not(:disabled) { border-color: var(--lime); box-shadow: var(--glow); }
 .btn.big:hover:not(:disabled) { box-shadow: var(--glow); }
-.btn:active:not(:disabled), .pill:active, .chip:active, .opt:active:not(:disabled), .choice:active, .boost:active, .stepper button:active { transform: scale(0.96); }
+.btn:active:not(:disabled), .pill:active, .chip:active, .opt:active:not(:disabled), .choice:active, .stepper button:active { transform: scale(0.96); }
 .opt:hover:not(:disabled):not(.on), .choice:hover:not(.on) { border-color: var(--text-2); }
 .opt.on { animation: pop 0.32s var(--spring); }
 .pill.on { box-shadow: 0 6px 20px -10px rgba(215, 255, 63, 0.6); }
@@ -263,8 +267,6 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 .slip { backdrop-filter: blur(10px); background: rgba(26, 26, 24, 0.92); }
 .slip .item { animation: pop-in 0.25s var(--spring) both; }
 .slip .total { display: inline-block; animation: bump 0.4s var(--spring); }
-.boost.on { position: relative; overflow: hidden; }
-.boost.on::after { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent); animation: sheen 2.4s var(--ease) infinite; }
 .notice { animation: slide-down 0.3s var(--ease) both; }
 .error { animation: slide-down 0.25s var(--ease) both; }
 
@@ -357,7 +359,9 @@ img, svg, video { max-width: 100%; }
   .nav a { flex: none; padding: 9px 13px; }
 
   /* every control is at least a thumb tall */
-  .btn, .pill, .opt, .boost, .choice, .stepper button, .switch { min-height: 44px; }
+  .btn, .pill, .opt, .choice, .stepper button, .switch { min-height: 44px; }
+  .chip.stake { min-height: 44px; flex: 1 1 0; }
+  .stake-pay { margin-left: 0; flex-basis: 100%; }
   .btn { padding: 12px 16px; }
   .btn.tiny-btn, .btn.ghost.tiny { min-height: 36px; padding: 8px 12px; }
   .chip { min-height: 36px; }
@@ -394,3 +398,11 @@ img, svg, video { max-width: 100%; }
   .login .left, .login .right { padding: 30px 16px; }
   .teaser { flex-wrap: wrap; }
 }
+
+/* the climb to a PlayStation 5, and the rewarded-ad placeholder */
+.prize-bar { height: 12px; border-radius: 6px; background: var(--raise); overflow: hidden; margin-top: 10px; }
+.prize-bar i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--green), var(--lime)); transition: width 0.5s var(--ease); }
+.ad-stub { border: 2px dashed var(--line); border-radius: 12px; padding: 26px 18px; text-align: center; background: var(--ink); margin-bottom: 14px; }
+.ad-count { font-size: 56px; line-height: 1; margin: 8px 0 4px; }
+.ad-progress { height: 6px; border-radius: 3px; background: var(--raise); overflow: hidden; margin-top: 14px; }
+.ad-progress i { display: block; height: 100%; background: var(--lime); transition: width 1s linear; }

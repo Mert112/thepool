@@ -1,6 +1,6 @@
 # The Pool — thepool.today
 
-A free-to-play **football** prediction game. People call what will happen in a match, score points for being right, and argue about it with the same crew every week. This repo is the whole product: database, jobs, email, and the web app.
+A free-to-play **football** prediction game. People call what will happen in a match and stake points on it; a call that lands returns the stake multiplied, a call that misses costs it. Everyone starts with 1,000 points and a million claims a PlayStation 5. This repo is the whole product: database, jobs, email, and the web app.
 
 The board carried seven sports for a while; `0017_football_only.sql` withdrew all of them. Football is the whole game.
 
@@ -24,6 +24,8 @@ tests/                 end-to-end rules test that runs on plain Postgres
 | Cron | `0006_cron.sql` | pg_cron schedules calling the edge functions through pg_net |
 | Multi-sport era | `0008`–`0016` | sports, ESPN leagues, per-sport markets, sportsbook pricing — **withdrawn by `0017`** |
 | Football only | `0017` | every other sport's data, markets and code paths removed; football's card is all that is left |
+| Explainers, history | `0018` | one plain-English line per call; `call_label()`, `my_history()` |
+| Point economy | `0019` | `profiles.balance`, the append-only `ledger`, stakes on calls, multipliers, rewarded ads, `prize_claims` |
 | Sync | `sync/espn-sync.mjs` | systemd timer, every minute: fixtures a week out (every 30 min), live scoreboards, goals and cards for matches being played, squads for the board, then settlement |
 | Mail | `send-notifications` | drains the queue through Resend |
 
@@ -91,7 +93,33 @@ Caddy serves `thepool.today` and `www.thepool.today` with automatic HTTPS; ports
 | Simple | the result (home / draw / away), over or under the goals line |
 | Complex | adds the handicap, the exact scoreline, a goalscorer, an assist, a yellow and a red |
 
-The red card takes an optional 15-minute window for a bigger return. Rules: calls that cannot all land are refused (no hedging); a player who never took part is void; a total or handicap landing exactly on the line is a push and is void; the result is 3-way, so a draw beats both sides.
+The red card takes an optional 15-minute window for a far bigger multiplier. Rules: calls that cannot all land are refused (no hedging); a player who never took part is void; a total or handicap landing exactly on the line is a push and is void; the result is 3-way, so a draw beats both sides.
+
+## Points are a currency (§4, `0019`)
+
+Everyone starts with **1,000 points**. Every call carries a stake the player picks — **10, 25, 50, 100 or 200** — and the stake leaves the balance when the card **locks at kick-off**, not when it is saved. At settlement a call that lands returns `stake × multiplier`, a call that misses returns nothing, and a void call hands the stake back.
+
+| Call | Multiplier |
+|---|---|
+| The result — a team | 1.5× |
+| The result — the draw | 3× |
+| Over / under the goals line | 2× |
+| The handicap | 2× |
+| The exact scoreline | 8× |
+| A goalscorer | 4× |
+| An assist | 6× |
+| A yellow card | 3× |
+| A red card | 10×, or 35×–120× with a 15-minute window |
+
+A card cannot stake more than the player holds, counting what other open cards have already promised; the check is in `rpc_save_calls`. If a balance somehow falls short by kick-off the entry is not staked at all and its calls settle void.
+
+**The ledger.** Every movement is one row in `pool.ledger` (`user_id`, signed `amount`, `reason`, `reference`), written only by `SECURITY DEFINER` functions; a trigger refuses any update or delete, and no role has a write grant on it or on `profiles.balance`. `apply_ledger()` is idempotent per `(reason, reference)` — it writes the difference between what a reason has already paid and what it should have — so a provider correction adjusts a balance instead of paying twice. The running sum of a player's rows is always their balance; the tests assert it.
+
+**Getting points.** A "Get points" button plays a 30-second rewarded-video placeholder worth **100 points**, up to **ten a day**. The cap is structural: `ad_views` is keyed on `(user_id, day, seq)` with `check (seq between 1 and 10)`, so an eleventh row cannot exist and two racing calls cannot take the same slot. `app_flags.rewarded_ads` switches the whole thing off. Swap the panel in `AdModal` for a real provider's player; nothing else moves.
+
+**The prize.** A balance of 1,000,000 can claim a PlayStation 5: `rpc_claim_prize()` writes a row to `prize_claims` for us to handle by hand. The profile page shows the progress bar and the claim button. Claiming does not spend the balance — we settle that when we fulfil it.
+
+**Leaderboards** rank by balance overall, and by what was won in scope for a crew, a week or a competition.
 
 ## ESPN sync
 ```
@@ -115,6 +143,7 @@ bash tests/run.sh      # rebuilds the db from every migration, then runs the tes
 ```
 `tests/game_test.sql` walks a full card: crew creation, RLS, filling, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
 `tests/football_test.sql` covers the rest of the card: the 3-way result, the goals line, the handicap, pushes, the red card's time window, non-runners and withdrawn cards.
+`tests/economy_test.sql` covers the money: the starting 1,000, a stake deducted at lock, a payout on a hit, a loss on a miss, a refund on a void, the balance handed back when a match is called off, a correction adjusting rather than double-paying, the ten-a-day ad cap, the prize claim, and the grants that stop a client touching any of it.
 
 ## Not in v1 (by design)
-Real money, sports other than football, native apps, push/WhatsApp, chat beyond the crew feed, sticker trading, social login, public profiles.
+Real money, sports other than football, native apps, push/WhatsApp, chat beyond the crew feed, sticker trading, social login, public profiles. Points are play money: they are never bought, sold or cashed out, and the only thing they buy is the prize.

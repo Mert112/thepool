@@ -2,10 +2,10 @@
 // and the full prediction history — every card played, with each call and whether it hit or missed.
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { myHistory, myStats, type HistoryCall, type HistoryCard } from "../lib/api";
+import { claimPrize, myHistory, myLedger, myStats, type HistoryCall, type HistoryCard, type LedgerRow } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
-import { fmtDay, ord } from "../lib/format";
-import { Bar, ErrorBox, Spinner } from "../components/ui";
+import { ago, fmtDay, ord } from "../lib/format";
+import { AdModal, Bar, ErrorBox, Spinner } from "../components/ui";
 
 const STATE: Record<HistoryCall["result"], { label: string; cls: string }> = {
   hit: { label: "Hit", cls: "tag hit" },
@@ -14,16 +14,33 @@ const STATE: Record<HistoryCall["result"], { label: string; cls: string }> = {
   pending: { label: "Open", cls: "tag" },
 };
 
+const REASON: Record<LedgerRow["reason"], string> = {
+  signup: "Starting points", stake: "Staked at kick-off", win: "A call landed",
+  refund: "A void call, handed back", ad_reward: "Watched an ad", prize: "Prize",
+};
+
 export default function Profile() {
-  const { profile } = useAuth();
-  const { data, error, loading } = useLoad(async () => {
-    const [stats, history] = await Promise.all([myStats(), myHistory(60)]);
-    return { stats, history };
+  const { profile, refreshProfile } = useAuth();
+  const [ads, setAds] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [claimErr, setClaimErr] = useState<string | null>(null);
+  const { data, error, loading, reload } = useLoad(async () => {
+    const [stats, history, ledger] = await Promise.all([myStats(), myHistory(60), myLedger(12)]);
+    return { stats, history, ledger };
   }, []);
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorBox msg={error} />;
-  const s = data!.stats, history = data!.history;
+  const s = data!.stats, history = data!.history, ledger = data!.ledger;
   const max = Math.max(1, ...s.competitions.map((c) => c.points));
+  const balance = profile?.balance ?? s.balance;
+  const pct = Math.min(100, (balance / s.prize_target) * 100);
+  const claim = async () => {
+    setClaiming(true); setClaimErr(null);
+    try { await claimPrize(); reload(); } catch (e: any) { setClaimErr(e.message ?? String(e)); }
+    setClaiming(false);
+  };
+  const refresh = () => { refreshProfile(); reload(); };
+
   return (
     <div className="grid two">
       <div className="stack">
@@ -32,11 +49,53 @@ export default function Profile() {
           <h1 className="display" style={{ margin: "6px 0 10px" }}>{profile?.display_name ?? "Player"}</h1>
           <div className="muted">{s.rank ? `${ord(s.rank)} of ${s.players} overall.` : "No settled cards yet — the first full time puts you on the table."} <Link to="/settings" className="lime small">Settings</Link></div>
           <div className="tiles" style={{ marginTop: 16 }}>
-            <div className="tile"><div className="v">{s.points}</div><div className="k">Points</div></div>
+            <div className="tile"><div className="v">{balance.toLocaleString()}</div><div className="k">Points held</div></div>
             <div className="tile"><div className="v">{s.rank ? ord(s.rank) : "–"}</div><div className="k">Overall</div></div>
             <div className="tile"><div className="v">{s.cards}</div><div className="k">Cards</div></div>
             <div className="tile"><div className="v">{s.hit_rate}%</div><div className="k">Hit rate</div></div>
           </div>
+          <div className="small muted" style={{ marginTop: 12 }}>
+            {s.committed > 0
+              ? <>{s.committed.toLocaleString()} of that is promised to cards that have not kicked off yet.</>
+              : <>Nothing is promised to an open card right now.</>}
+            {" "}Across every settled card you are {s.points > 0 ? "up" : s.points < 0 ? "down" : "level"} {Math.abs(s.points).toLocaleString()}.
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="row-of" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+            <div className="eyebrow">Get points</div>
+            <span className="tiny muted">{s.ads_left} of 10 left today</span>
+          </div>
+          <div className="small muted" style={{ marginBottom: 12 }}>
+            Watch a 30-second ad for 100 points. Ten a day, counted by the database and reset at midnight UTC.
+          </div>
+          <button className="btn big" disabled={!s.ads_enabled || s.ads_left <= 0} onClick={() => setAds(true)}>
+            {!s.ads_enabled ? "Switched off right now" : s.ads_left > 0 ? "Watch an ad · +100" : "Back tomorrow"}
+          </button>
+        </div>
+
+        <div className="panel">
+          <div className="eyebrow" style={{ marginBottom: 10 }}>The PlayStation 5</div>
+          <div className="row-of" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+            <span className="num lime" style={{ fontSize: 34 }}>{balance.toLocaleString()}</span>
+            <span className="small muted">of {s.prize_target.toLocaleString()}</span>
+          </div>
+          <div className="prize-bar" aria-label={`${Math.floor(pct)}% of the way to a PlayStation 5`}><i style={{ width: `${Math.max(0.6, pct)}%` }} /></div>
+          <div className="small muted" style={{ marginTop: 8 }}>
+            {balance >= s.prize_target
+              ? "You are there. Claim it and we will be in touch by email."
+              : `${(s.prize_target - balance).toLocaleString()} to go. Reach a million points and the console is yours.`}
+          </div>
+          {s.prize_claim?.status === "pending" ? (
+            <div className="banner ok" style={{ marginTop: 12, marginBottom: 0 }} role="status"><b>Claim received.</b> Filed {ago(s.prize_claim.created_at)} ago — we handle these by hand and will email you.</div>
+          ) : (
+            <button className="btn big" style={{ marginTop: 12 }} disabled={balance < s.prize_target || claiming} onClick={claim}>
+              {claiming ? "Claiming…" : "Claim the PlayStation 5"}
+            </button>
+          )}
+          <ErrorBox msg={claimErr} />
+          {s.prize_claim && s.prize_claim.status !== "pending" && <div className="tiny muted" style={{ marginTop: 8 }}>Your last claim: {s.prize_claim.status}.</div>}
         </div>
 
         <div className="panel">
@@ -47,6 +106,16 @@ export default function Profile() {
       </div>
 
       <div className="stack">
+        <div className="panel">
+          <div className="eyebrow" style={{ marginBottom: 8 }}>Where the points went</div>
+          {ledger.length === 0 && <div className="muted small">Nothing yet.</div>}
+          {ledger.map((l, i) => (
+            <div key={i} className="small" style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", borderBottom: "1px solid var(--raise)" }}>
+              <span className="muted">{REASON[l.reason]}<span className="tiny faint" style={{ marginLeft: 6 }}>{ago(l.created_at)}</span></span>
+              <b style={{ color: l.amount > 0 ? "var(--lime)" : "var(--magenta)" }}>{l.amount > 0 ? `+${l.amount}` : l.amount}</b>
+            </div>
+          ))}
+        </div>
         <div className="panel">
           <div className="eyebrow">Matchday streak</div>
           <div className="num lime" style={{ fontSize: 56, lineHeight: 1 }}>{s.streak}</div>
@@ -63,6 +132,7 @@ export default function Profile() {
           ))}
         </div>
       </div>
+      {ads && <AdModal onClose={() => { setAds(false); refresh(); }} onCredited={refresh} />}
     </div>
   );
 }

@@ -4,9 +4,9 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { getCardPlayers, getCardsForMatch, getCrowd, getMarkets, getMatch, getMyCrews, getMyEntry, type Card } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, plural, soon } from "../lib/format";
-import { Avatar, Empty, ErrorBox, Pips, Spinner } from "../components/ui";
+import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 import { CreateCardDialog } from "./Board";
-import { offered, pointsRange } from "../lib/calls";
+import { multiplierRange, offered } from "../lib/calls";
 
 export default function Match() {
   const { id } = useParams();
@@ -15,7 +15,7 @@ export default function Match() {
   const now = useNow();
   const loc = useLocation();
   // the receipt FillCard hands over when it redirects here after a save
-  const justSaved = (loc.state as { saved?: { n: number; calls: string[] } } | null)?.saved ?? null;
+  const justSaved = (loc.state as { saved?: { n: number; staked: number; calls: string[] } } | null)?.saved ?? null;
   const { session } = useAuth();
   const [creatingFor, setCreatingFor] = useState<string | null | undefined>(undefined); // undefined = closed, null = public
   const [selected, setSelected] = useState<string | null>(null);
@@ -46,8 +46,8 @@ export default function Match() {
             <div>
               <b>Saved ✓</b>{" "}
               {justSaved.n === 0
-                ? "Your card is withdrawn — you have no calls on this match."
-                : <>{justSaved.n} {justSaved.n === 1 ? "call is" : "calls are"} on your card: {justSaved.calls.join(" · ")}.</>}
+                ? "Your card is withdrawn — you have no calls on this match, and nothing is staked."
+                : <>{justSaved.n} {justSaved.n === 1 ? "call is" : "calls are"} on your card for {justSaved.staked} points, which leave your balance at kick-off: {justSaved.calls.join(" · ")}.</>}
             </div>
             <button className="btn ghost tiny-btn" onClick={() => nav(loc.pathname, { replace: true })}>Dismiss</button>
           </div>
@@ -73,7 +73,7 @@ export default function Match() {
                 </span>
               </div>
               <p className="muted">
-                {players.length ? `${players.length.toLocaleString()} ${players.length === 1 ? "card is" : "cards are"} already in on this match.` : "Nobody has filled a card yet — be the first."} Same calls for everyone; the biggest total takes it, level totals share the top. Nothing is staked but the argument.
+                {players.length ? `${players.length.toLocaleString()} ${players.length === 1 ? "card is" : "cards are"} already in on this match.` : "Nobody has filled a card yet — be the first."} Same calls for everyone, each at whatever you choose to stake. Points are a currency: a call that lands returns its stake times the multiplier, a call that misses costs the stake.
               </p>
               <div className="row-of">
                 {upcoming && <button className="btn big" onClick={() => nav(`/card/${card.id}`)}>{mine ? "Edit your card" : "Fill the card"}</button>}
@@ -91,14 +91,14 @@ export default function Match() {
 
         {card && (
           <div className="panel">
-            <div className="eyebrow" style={{ marginBottom: 12 }}>The scoring · what the pool is calling</div>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>The calls · what each returns per point staked · what the pool has called</div>
             {shown.map((k) => {
               const t = topCrowd(k.call_type);
               return (
                 <div key={k.call_type} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px minmax(0,1.2fr)", gap: 14, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--raise)" }}>
                   <div><b>{k.title}</b><div className="tiny muted explainer">{k.explainer}</div></div>
-                  <div className="num lime" style={{ fontSize: 20, whiteSpace: "nowrap" }}>{pointsRange(k, match)}</div>
-                  <div className="small muted">{t ? <span>{t.pct}% · {t.label}</span> : <span className="faint">no calls yet</span>}<Pips n={Math.min(8, k.points)} /></div>
+                  <div className="num lime" style={{ fontSize: 20, whiteSpace: "nowrap" }}>{multiplierRange(k)}</div>
+                  <div className="small muted">{t ? <span>{t.pct}% · {t.label}</span> : <span className="faint">no calls yet</span>}</div>
                 </div>
               );
             })}
