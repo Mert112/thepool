@@ -282,8 +282,15 @@ These were not spelled out in the brief. Each is easy to reverse.
 
 ## Deployed
 
-All four migrations (`0017`–`0020`) are applied to the hosted project and the app is live on
-<https://thepool.today>.
+All five migrations (`0017`–`0021`) are applied to the hosted project and the app is live on
+<https://thepool.today>. The season has been reset: six players on 100 points each, 600 ever
+credited, nothing with the house and nothing in a jackpot — the conservation law checked against
+live data, not just the tests.
+
+Applying `0021` turned up one more ordering bug that the tests could not: the season reset writes
+`adjustment` ledger rows, and it ran *before* the check constraint that allows them. On a fresh
+test database there are no profiles at migration time, so the reset matched zero rows and the
+constraint was never exercised. The migration now widens the ledger's vocabulary first.
 
 **What the migrations removed, exactly:** 3,048 matches, 1,589 teams, 28,029 players, 10 cards,
 4 entries, 11 calls, 6 stickers, 353 player stats, 5,226 player over/unders, 10 competitions,

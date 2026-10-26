@@ -60,24 +60,8 @@ join matches m on m.id = c.match_id;
 grant select on v_entry_points to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 2. A new season: everyone starts on 100
--- ---------------------------------------------------------------------------
-insert into ledger (user_id, amount, reason, reference)
-select id, 100 - balance, 'adjustment', 'season-2026-pari-mutuel'
-from profiles where balance <> 100;
-update profiles set balance = 100 where balance <> 100;
-
-create or replace function handle_new_user() returns trigger
-language plpgsql security definer set search_path = pool, public, extensions as $$
-begin
-  insert into profiles (id, email) values (new.id, new.email) on conflict (id) do nothing;
-  insert into notification_settings (user_id) values (new.id) on conflict (user_id) do nothing;
-  insert into ledger (user_id, amount, reason, reference) values (new.id, 100, 'signup', new.id::text);
-  return new;
-end $$;
-
--- ---------------------------------------------------------------------------
--- 3. The ledger gains the house, and loses minting
+-- 2. The ledger gains the house, and loses minting. This comes before the season reset, because
+--    the reset writes 'adjustment' rows and the check has to allow them first.
 -- ---------------------------------------------------------------------------
 -- the house is not a player, so its rows carry no user
 alter table ledger alter column user_id drop not null;
@@ -110,6 +94,23 @@ begin
   insert into ledger (user_id, amount, reason, reference) values (p_user, delta, p_reason, p_reference);
   update profiles set balance = balance + delta where id = p_user;
   return delta;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 3. A new season: everyone starts on 100
+-- ---------------------------------------------------------------------------
+insert into ledger (user_id, amount, reason, reference)
+select id, 100 - balance, 'adjustment', 'season-2026-pari-mutuel'
+from profiles where balance <> 100;
+update profiles set balance = 100 where balance <> 100;
+
+create or replace function handle_new_user() returns trigger
+language plpgsql security definer set search_path = pool, public, extensions as $$
+begin
+  insert into profiles (id, email) values (new.id, new.email) on conflict (id) do nothing;
+  insert into notification_settings (user_id) values (new.id) on conflict (user_id) do nothing;
+  insert into ledger (user_id, amount, reason, reference) values (new.id, 100, 'signup', new.id::text);
+  return new;
 end $$;
 
 -- the multipliers go, and with them the last thing that could conjure a point
