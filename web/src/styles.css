@@ -292,3 +292,25 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 /* what an option pays, on the option itself */
 .opt .odds { display: inline-block; margin-left: 10px; padding: 1px 8px; border-radius: 999px; font-family: var(--display); font-size: 15px; letter-spacing: 0.02em; background: var(--raise); color: var(--lime); transition: background-color 0.18s var(--ease), color 0.18s var(--ease); }
 .opt.on .odds { background: var(--ink); color: var(--lime); }
+
+/* ===========================================================================
+   Banners. A card that quietly dropped a call is the bug that cost people points,
+   so a removal and a save both say so where the eye already is — above the card.
+   =========================================================================== */
+.banner { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap;
+  font-size: 13px; line-height: 1.5; border-radius: 11px; padding: 12px 14px; margin-bottom: 14px;
+  border: 2px solid var(--line); background: var(--panel-2); color: var(--text-2);
+  animation: slide-down 0.25s var(--ease) both; }
+.banner b { color: var(--text); }
+.banner.ok   { border-color: var(--lime);    background: var(--lime-ink); }
+.banner.ok b { color: var(--lime); }
+.banner.warn { border-color: var(--magenta); }
+.banner.warn b { color: var(--magenta); }
+.banner.bad  { border-color: var(--magenta); background: #26161d; }
+.banner.bad b { color: var(--magenta); }
+.btn.tiny-btn { padding: 6px 12px; font-size: 11px; }
+.notice.ok  { border-left-color: var(--lime); }
+.notice.bad { border-left-color: var(--magenta); color: var(--magenta); }
+.market.dropped { border-color: var(--magenta); border-style: dashed; }
+.dropped-flag { font-size: 12px; font-weight: 700; color: var(--magenta); margin-bottom: 10px; }
+.scroll-x { overflow-x: auto; }

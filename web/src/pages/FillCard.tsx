@@ -1,4 +1,11 @@
 // §5.4 Filling the card: all markets on one screen, a running slip, one boost.
+//
+// Two calls that cannot both land are a hedge, and the server refuses the card outright, so a new
+// pick replaces the one it contradicts. That used to happen in silence — one line in the slip at the
+// foot of a long page, wiped by the next tap — and people saved cards missing the call they thought
+// they had made. The replacement is now a banner that stays until it is dismissed or undone, and the
+// market it emptied says so where the market is. Saving then reads the entry back and shows exactly
+// what the database kept, so "I filled it in" and "it says No pick" can never disagree again.
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getCard, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, saveCalls, setBoost, type Call, type CallType, type Market } from "../lib/api";
@@ -19,8 +26,8 @@ export default function FillCard() {
   const [side, setSide] = useState<Partial<Record<CallType, "h" | "a">>>({});
   const [boost, setBoostState] = useState<CallType | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [saved, setSaved] = useState<{ calls: Call[] } | null>(null);
+  const [clash, setClash] = useState<{ dropped: CallType[]; by: CallType; before: Picks; boost: CallType | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const { data, error, loading, reload } = useLoad(async () => {
@@ -44,9 +51,11 @@ export default function FillCard() {
   }, [data]);
 
   const editable = data ? data.card.status === "open" && new Date(data.match.utc_date).getTime() > now : false;
-  // a new pick replaces any call it contradicts (the server refuses hedged cards), and says so
+  const titleOf = (c: CallType) => data?.markets.find((x) => x.call_type === c)?.title ?? c;
+  // a new pick replaces any call it contradicts (the server refuses hedged cards), loudly and undoably
   const set = (k: CallType, v: Call | null) => {
-    setSaved(false); setNotice(null);
+    setSaved(null); setErr(null);
+    const before = picks, beforeBoost = boost;
     const dropped: CallType[] = [];
     const n = { ...picks };
     if (v) {
@@ -55,27 +64,42 @@ export default function FillCard() {
     } else delete n[k];
     setPicks(n);
     if (boost && (boost === k && !v || dropped.includes(boost))) setBoostState(null);
-    if (dropped.length) {
-      const titles = dropped.map((c) => `“${data!.markets.find((x) => x.call_type === c)?.title ?? c}”`).join(" and ");
-      setNotice(`Removed ${titles} — it can't land alongside this pick.`);
-    }
+    // the warning survives until it is dismissed, undone, or the market it emptied is filled again
+    if (dropped.length) setClash({ dropped, by: k, before, boost: beforeBoost });
+    else if (clash && (clash.dropped.includes(k) || clash.by === k)) setClash(null);
   };
+  const undoClash = () => { if (!clash) return; setPicks(clash.before); setBoostState(clash.boost); setClash(null); setSaved(null); };
   // what a pick pays: 10 × its price (a saved, unchanged pick keeps the price it was taken at), doubled when boosted
   const ptsOf = (k: Market) => { const c = picks[k.call_type]; return c && data ? pointsFor(priceOfCall(k, c, data.match)) * (boost === k.call_type ? 2 : 1) : 0; };
   const slip = useMemo(() => (data?.markets ?? []).filter((k) => picks[k.call_type]), [data, picks]);
   const total = slip.reduce((s, k) => s + ptsOf(k), 0);
 
+  // what identifies a pick, for checking the database kept what we sent. `line` is the server's to set.
+  const sig = (c: Call) => [c.call_type, c.team_id ?? "", c.yes ?? "", c.player_id ?? "", c.home_goals ?? "", c.away_goals ?? "", c.pick ?? ""].join("|");
+
   const save = async () => {
     if (!data) return;
-    setSaving(true); setErr(null);
+    setSaving(true); setErr(null); setSaved(null);
     try {
-      // only markets still on this card (a call type retired since it was saved is dropped)
-      const calls = Object.values(picks).filter((c) => data.markets.some((k) => k.call_type === c.call_type)).map((c) => ({ call_type: c.call_type, team_id: c.team_id ?? null, yes: c.yes ?? null, player_id: c.player_id ?? null, home_goals: c.home_goals ?? null, away_goals: c.away_goals ?? null, pick: c.pick ?? null }));
+      const off = Object.values(picks).filter((c) => !data.markets.some((k) => k.call_type === c.call_type));
+      if (off.length) throw new Error(`${off.map((c) => `“${titleOf(c.call_type)}”`).join(" and ")} is no longer on this card. Remove it and save again.`);
+      const calls: Call[] = Object.values(picks).map((c) => ({ call_type: c.call_type, team_id: c.team_id ?? null, yes: c.yes ?? null, player_id: c.player_id ?? null, home_goals: c.home_goals ?? null, away_goals: c.away_goals ?? null, pick: c.pick ?? null }));
       await saveCalls(data.card.id, calls);
       if (calls.length) await setBoost(data.card.id, boost);   // no calls: the entry is withdrawn, boost with it
-      setSaved(true);
+
+      // read it back: the confirmation is what the database holds, not what we hoped it would hold
+      const entry = await getMyEntry(data.card.id, uid);
+      const stored = entry?.calls ?? [];
+      const want = new Set(calls.map(sig)), got = new Set(stored.map(sig));
+      const missing = calls.filter((c) => !got.has(sig(c))).map((c) => titleOf(c.call_type));
+      const extra = stored.filter((c) => !want.has(sig(c))).map((c) => titleOf(c.call_type));
+      if (missing.length || extra.length) {
+        throw new Error(`Your card did not save as you set it. ${missing.length ? `${missing.join(", ")} did not save. ` : ""}${extra.length ? `${extra.join(", ")} is on the card but not as you set it. ` : ""}Nothing is lost — check the calls below and save again.`);
+      }
+      setSaved({ calls: stored });
+      setClash(null);
       reload();
-    } catch (e: any) { setErr(e.message); }
+    } catch (e: any) { setErr(e.message ?? String(e)); }
     setSaving(false);
   };
 
@@ -109,18 +133,47 @@ export default function FillCard() {
             {editable ? `Locks in ${countdown(match.utc_date, now)} · edit as often as you like until then` : "This card is locked."}
           </div>
           <div className="tiny muted" style={{ margin: "-10px 0 16px" }}>
-            {priced ? `Points follow the odds (${match.odds.provider}): a landed call pays 10 × its price, locked in when you save it.` : "No odds posted for this game yet: calls pay their standard price. Points are locked in when you save."}
+            {priced ? `Points follow the odds (${match.odds.provider}): a landed call pays 10 × its price, locked in when you save it.` : "No odds posted for this match yet: calls pay their standard price. Points are locked in when you save."}
           </div>
+
+          {err && (
+            <div className="banner bad" role="alert">
+              <b>Not saved.</b> {err}
+            </div>
+          )}
+          {saved && (
+            <div className="banner ok" role="status">
+              <b>Saved ✓</b>{" "}
+              {saved.calls.length === 0
+                ? "Your card is withdrawn — you have no calls on this match."
+                : `${saved.calls.length} ${saved.calls.length === 1 ? "call is" : "calls are"} on your card: ${saved.calls.map((c) => `${titleOf(c.call_type)} — ${pickText(c)}`).join(" · ")}.`}
+            </div>
+          )}
+          {clash && (
+            <div className="banner warn" role="alert">
+              <div>
+                <b>{clash.dropped.map((c) => `“${titleOf(c)}”`).join(" and ")} removed.</b>{" "}
+                It cannot land alongside your “{titleOf(clash.by)}” pick, and the card is refused if both are on it.
+                Pick it again a different way, or undo.
+              </div>
+              <div className="row-of">
+                <button className="btn tiny-btn" onClick={undoClash}>Undo</button>
+                <button className="btn ghost tiny-btn" onClick={() => setClash(null)}>Dismiss</button>
+              </div>
+            </div>
+          )}
 
           {markets.map((k, i) => {
             const cur = picks[k.call_type];
             const on = !!cur, boosted = boost === k.call_type;
+            const dropped = !!clash?.dropped.includes(k.call_type);
             const sd = side[k.call_type] ?? "h";
             const teamId = sd === "h" ? match.home_team_id : match.away_team_id;
             const squad = squads.filter((p) => p.team_id === teamId);
             const top = crowdFor(k.call_type)[0];
             return (
-              <div key={k.call_type} className={"market" + (on ? " on" : "")} style={{ "--i": i } as CSSProperties}>
+              <div key={k.call_type} className={"market" + (on ? " on" : "") + (dropped ? " dropped" : "")} style={{ "--i": i } as CSSProperties}>
+                {dropped && <div className="dropped-flag">Removed — it clashed with your “{titleOf(clash!.by)}” pick. Nothing here will be saved until you pick again.</div>}
                 <div className="head">
                   <div><h3 className="display" style={{ margin: 0 }}>{k.title}</h3><div className="small muted">{k.description}</div></div>
                   <div style={{ textAlign: "right" }}>
@@ -196,7 +249,7 @@ export default function FillCard() {
                     {top ? <>{top.pct}% · {top.label}<Bar pct={top.pct} width={260} /></> : <span className="faint">Nobody has called this yet.</span>}
                   </div>
                   {on && editable && (
-                    <button className={"boost" + (boosted ? " on" : "")} onClick={() => { setSaved(false); setBoostState(boosted ? null : k.call_type); }}>
+                    <button className={"boost" + (boosted ? " on" : "")} onClick={() => { setSaved(null); setBoostState(boosted ? null : k.call_type); }}>
                       {boosted ? "Boosted ×2" : boost ? "Move the boost here" : "Boost this call · ×2"}
                     </button>
                   )}
@@ -238,8 +291,8 @@ export default function FillCard() {
         ) : (
           <button className="btn big" onClick={() => nav(`/card/${card.id}/live`)}>{card.status === "settled" ? "See the recap" : "Watch it live"}</button>
         )}
-        <ErrorBox msg={err} />
-        {notice && <div className="notice">{notice}</div>}
+        {err && <div className="notice bad">Not saved — {err}</div>}
+        {saved && !err && <div className="notice ok">Saved ✓ — {saved.calls.length ? `${saved.calls.length} ${saved.calls.length === 1 ? "call is" : "calls are"} on your card.` : "your card is withdrawn."}</div>}
       </div>
     </div>
   );

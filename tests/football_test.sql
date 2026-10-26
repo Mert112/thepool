@@ -185,6 +185,36 @@ do $$ begin
   assert res('bbbbbbbb-0000-0000-0000-000000000002', 8500, 'red') = 'miss', 'the wrong window misses';
 end $$;
 
+-- --- the save path: Türkiye v France (the bug behind "No pick · 0") -----------------
+-- Two users filled this card and later found a call they had made reading "No pick". The calls
+-- they thought they had made contradicted the exact scoreline they set, so the app dropped them
+-- before sending — it had to, because the server refuses a card whose calls cannot all land.
+-- These checks pin both halves down: the refusal, and the fact that a save is a full replacement.
+insert into matches (id, competition_code, sport, season, utc_date, status, home_team_id, away_team_id, total_line, odds) values
+  (8600, 'UNL', 'soccer', '2026', now() + interval '2 hours', 'TIMED', 8001, 8002, 3.5,
+     '{"home":7.5,"draw":5.25,"away":1.32,"spread":{"home_line":1.5,"home":1.87,"away":1.83},"total":{"line":3.5,"over":1.91,"under":1.87}}');
+do $$ declare u text := 'aaaaaaaa-0000-0000-0000-000000000001'; begin
+  -- backing the home side and then calling a 1–2 away win cannot both land
+  assert rejects(u, 8600, '[{"call_type":"winner","team_id":8001},{"call_type":"score","home_goals":1,"away_goals":2}]', '%other side winning%'), 'the result and the scoreline must agree';
+  -- three goals is under 3.5, so "over" and that scoreline cannot both land either
+  assert rejects(u, 8600, '[{"call_type":"total","yes":true},{"call_type":"score","home_goals":1,"away_goals":2}]', '%over/under disagree%'), 'the goals line and the scoreline must agree';
+  -- and the away side laying 1.5 goals does not cover a one-goal win
+  assert rejects(u, 8600, '[{"call_type":"spread","team_id":8002},{"call_type":"score","home_goals":1,"away_goals":2}]', '%loses your handicap%'), 'the handicap and the scoreline must agree';
+end $$;
+-- a save is a full replacement: a call left out of the array is deleted, which is why the app now
+-- reads the entry back and shows what the database actually holds
+do $$ declare card uuid; begin
+  card := play('aaaaaaaa-0000-0000-0000-000000000001', 8600,
+    '[{"call_type":"winner","team_id":8002},{"call_type":"scorer","player_id":80021},{"call_type":"yellow","player_id":80011}]');
+  assert (select count(*) from calls k join entries e on e.id = k.entry_id where e.card_id = card) = 3, 'three calls in';
+  perform test_as('aaaaaaaa-0000-0000-0000-000000000001');
+  perform rpc_save_calls(card, '[{"call_type":"scorer","player_id":80021},{"call_type":"yellow","player_id":80011}]');
+  perform test_reset();
+  assert (select count(*) from calls k join entries e on e.id = k.entry_id where e.card_id = card and k.call_type = 'winner') = 0,
+         'a call left out of the save is deleted';
+  assert (select count(*) from calls k join entries e on e.id = k.entry_id where e.card_id = card) = 2, 'the rest survive';
+end $$;
+
 -- --- the board -------------------------------------------------------------------
 do $$ begin
   assert (select (odds->>'draw')::numeric from v_board where match_id = 8000) = 3.6, 'the board carries the prices';
