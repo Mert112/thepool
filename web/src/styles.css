@@ -437,3 +437,9 @@ img, svg, video { max-width: 100%; }
 .icon-card.r-rare .face { border-color: #4aa3ff; }
 .icon-card.r-epic .face { border-color: #b06cff; }
 .icon-card.r-legendary .face { border-color: var(--lime); }
+
+/* §i18n the language switcher: a plain select in the top bar, chips in settings */
+.lang-select { width: auto; padding: 5px 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+  background: var(--raise); border: 2px solid var(--line); border-radius: 8px; color: var(--soft); cursor: pointer; }
+.lang-select:hover { color: var(--text); border-color: var(--line-soft); }
+@media (max-width: 700px) { .lang-select { padding: 4px 6px; } }

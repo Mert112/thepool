@@ -1,5 +1,106 @@
 # Changelog
 
+## 2026-10-26 — three languages
+
+Migration `0023_languages.sql`. `bash tests/run.sh` rebuilds a local Postgres from every
+migration, runs the six SQL suites and the browser-rule suite.
+
+### English, Turkish and Bulgarian
+
+- **Every user-facing string goes through a translation file.** `web/src/i18n/en.ts` is the
+  source; `tr.ts` and `bg.ts` are annotated `: Dict`, so a key that is missing, renamed or takes
+  different arguments **fails `npm run build`** before it can reach anyone. There is no runtime
+  lookup by string and so no way to typo a key: `t.board.upcoming` is checked by the compiler,
+  and a string that needs a number is a function (`t.board.playing(n)`), not a template with a
+  placeholder to get wrong. Nothing user-facing is hard-coded in a page any more, down to the
+  "v" between two team names, which is a hyphen in Turkish and a dash in Bulgarian.
+- **The default language is the browser's**, if it is one of the three, otherwise English. The
+  rule lives alone in `web/src/i18n/detect.js` so it can be tested without a browser, and
+  `tests/lang_test.mjs` covers it: region subtags ignored (`tr-CY` is Turkish), case and
+  separators ignored, preference order respected, junk skipped rather than treated as a miss.
+- **The choice follows the player, not the browser.** `profiles.language` is null until someone
+  chooses; the app then takes the browser's answer and writes it back, so the mail sent at full
+  time is in the same language as the screen the card was filled on. A null default matters: a
+  column defaulting to `'en'` would have silently overruled every Turkish browser that ever
+  signed up. `rpc_set_language()` is the only way to set it — the column is not writable by a
+  client, and the switcher sits in the top bar and in Settings.
+- **Dates, times and numbers** are formatted by `Intl` for the chosen locale, including ordinals
+  (`3rd` / `3.` / `3-ти`) and grouped numbers. Emails go further and read their times where
+  their readers live: `Europe/London`, `Europe/Istanbul`, `Europe/Sofia`, each saying which.
+- **Team, player, competition and crew names are never translated.** They are the provider's or
+  the players' own words and pass through exactly as given.
+
+### A call in pieces, not a sentence
+
+`call_label()` builds English prose — "Over 2.5", "Yes — level at 90" — which cannot be
+translated after the fact without guessing. `call_parts()` returns the same call as pieces
+instead: the call type, the team, the player, the line, the scoreline, the window. The names come
+straight from the provider and are passed through; everything else is a key or a number the app
+puts its own words round. `card_crowd()` and `my_history()` now carry both, so nothing reading
+the old `label` breaks, and a crowd split reads the same as the card it came from in all three
+languages. A test asserts no English prose can leak into the pieces — that is the failure that
+would quietly turn a Turkish screen half-English.
+
+### Server refusals
+
+The database raises in English. `translateError()` matches the known messages (and the three that
+carry numbers — stake, insufficient points, the prize) and swaps them for the translation; one we
+have not met still reaches the player in English rather than being swallowed.
+
+### Also fixed, found while doing this
+
+- **FillCard crashed on any card with a saved entry.** `payout()` runs during the render that
+  hydrates a saved entry and dereferenced `pickRow`, a `const` declared further down the same
+  function — a temporal-dead-zone `ReferenceError`. It only ever fired on the second render, which
+  is why it survived: the first render has no picks, so `payout` is never called. The three pot
+  lookups are now declared above their first caller.
+- **Two outdated lines of copy.** The match page and the "open a card" dialog still said a call
+  "returns its stake times the multiplier" and that points "follow the odds — each call pays 10 ×
+  its price". Multipliers were removed in `0021`; both now describe the pot.
+- The ad modal takes the reward as a prop instead of hard-coding `0.5`, and the "new card" mail
+  counts the card's calls instead of claiming 8 and 3.
+
+### For a native speaker to check
+
+The translations are written to read naturally rather than word-for-word, which means some
+choices are mine and worth a second opinion:
+
+- **Turkish** — *kupon* for "card" (the betting-slip sense, which is what it is) and *tahmin* for
+  "call"; *pot* for the pool of stakes, which is the poker word but also means a blunder
+  colloquially; *jackpot* left as the loanword rather than *devreden pot*; *Tabela* for the board
+  and *Sen* for the "You" nav item, which keeps the English's directness but is an unusual label;
+  *ekip* for "crew"; *yatırım* for "stake".
+- **Bulgarian** — *фиш* for "card" and *прогноза* for "call"; *пот* for the pool, same poker
+  borrowing as Turkish; *екип* for "crew", where *компания* might read warmer; *Ти* for the "You"
+  nav item; *Голмайстор* for the anytime-goalscorer market, which also means "top scorer".
+- Both — the longer explanatory paragraphs (the pari-mutuel rules on the fill page, the album
+  footer, the streak note) are the most paraphrased, because a literal translation of the English
+  reads stiff in both languages.
+
+Competition names are left as the provider gives them, so a Turkish screen says "Premier League",
+not "Premier Lig". Say the word if they should be translated too.
+
+### Verified in production
+
+Eleven of the twelve fingerprints matched the locally-migrated database straight away; the other
+two — the markets rows and the reference data — matched once the aggregate was ordered under an
+explicit `collate "C"`. The mismatch was the comparison's, not the database's: `string_agg(… order
+by x)` sorts under the database's own collation, and strings carrying punctuation and mixed case
+sort differently between the two servers. The fingerprint now pins the collation.
+
+### Not fixed: no mail has ever been sent
+
+While checking the mail, a pre-existing bug turned up that has nothing to do with translation.
+`pg_cron` is not installed on the production project, so `0006_cron.sql` has never been applied,
+and nothing else calls the `send-notifications` function — the server's systemd timer runs the
+ESPN sync only. **51 notifications are queued, none sent, none errored**, the newest from
+2026-10-10. The function itself works and is now deployed in three languages; nothing drains the
+queue. Draining it would send 51 mails, some of them sixteen days old, to real addresses, so that
+is a decision rather than a fix: say the word and the timer goes in (and whether to send the
+backlog or mark it as read first).
+
+---
+
 ## 2026-10-26 — football only, a save that cannot lie, and points as a currency
 
 Five pieces of work, one commit each. Migrations `0017`–`0019`; `bash tests/run.sh` rebuilds a

@@ -173,6 +173,32 @@ awards nothing twice. The client cannot insert into `user_icons`, call `award_ic
 **Leaderboards** rank by balance overall, and by what was won in scope for a crew, a week or a
 competition. In a zero-sum game the player who never played can lead, which is the honest answer.
 
+## Three languages (`0023`)
+
+English, Turkish and Bulgarian. Every user-facing string lives in `web/src/i18n/{en,tr,bg}.ts`;
+`en.ts` is the source and the other two are typed against it, so a missing or renamed key fails
+`npm run build` rather than shipping a blank. Call it through `useI18n()`:
+
+```tsx
+const { t, fmt, lang, setLang } = useI18n();
+<b>{t.board.upcoming}</b>                      // checked at build time, not looked up by string
+<span>{t.board.playing(r.playing)}</span>      // a string that needs a number is a function
+<span>{fmt.when(m.utc_date)}</span>            // Intl, in the chosen locale
+```
+
+- **Default**: the browser's language if it is one of the three, else English
+  (`web/src/i18n/detect.js`, tested by `tests/lang_test.mjs`).
+- **Saved**: `profiles.language`, null until chosen, set only through `rpc_set_language()`. The
+  mail follows it, and reads its times in `Europe/London`, `Europe/Istanbul` or `Europe/Sofia`.
+- **Not translated**: team, player, competition and crew names, which are the provider's or the
+  players' own words.
+- **Calls**: `call_parts()` hands a call over as pieces (type, team, player, line, scoreline,
+  window) rather than as an English sentence, so the crowd split and the history read in the
+  player's language. `call_label()` still returns the English alongside it.
+- **Adding a language**: add the code to `LANGS` in `detect.js` and the `language` check in the
+  migration, write the dictionary against `Dict`, add one to `supabase/functions/_shared/i18n.ts`
+  for the mail, and the compiler will name anything you missed.
+
 ## ESPN sync
 ```
 cp sync/.env.example sync/.env    # SUPABASE_URL and a secret key (Supabase → Settings → API keys)
@@ -196,6 +222,8 @@ bash tests/run.sh      # rebuilds the db from every migration, then runs the tes
 `tests/game_test.sql` walks a full card: crew creation, RLS, filling, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
 `tests/football_test.sql` covers the rest of the card: the 3-way result, the goals line, the handicap, pushes, the red card's time window, non-runners and withdrawn cards.
 `tests/jackpot_test.sql` covers the rollover: the rake, the compounding, a void never feeding the pot, one competition's jackpot staying out of another's, a single winner taking it all, several winners splitting it by stake with the remainder carried, and settling twice moving nothing.
+`tests/i18n_test.sql` covers the language: the null default, the three-way check, `rpc_set_language()` setting only your own, the pieces a call travels as, that no English prose leaks into them, and the grants.
+`tests/lang_test.mjs` covers the default-language rule in the browser (`node --test`).
 `tests/economy_test.sql` covers the money: the starting 1,000, a stake deducted at lock, a payout on a hit, a loss on a miss, a refund on a void, the balance handed back when a match is called off, a correction adjusting rather than double-paying, the ten-a-day ad cap, the prize claim, and the grants that stop a client touching any of it.
 
 ## Not in v1 (by design)

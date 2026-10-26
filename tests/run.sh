@@ -15,3 +15,9 @@ for t in tests/*_test.sql; do
   echo "--- $t"
   psql -q -v ON_ERROR_STOP=1 "$DB" -f "$t" | grep -E 'PASSED|ERROR' || { echo "FAILED: $t"; exit 1; }
 done
+# the rules that live in the browser rather than the database (§i18n: the default language)
+for t in tests/*_test.mjs; do
+  echo "--- $t"
+  node --test "$t" > /dev/null || { echo "FAILED: $t"; exit 1; }
+  echo " $(basename "$t" _test.mjs | tr 'a-z' 'A-Z') TESTS PASSED"
+done

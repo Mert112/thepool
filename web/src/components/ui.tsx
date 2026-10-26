@@ -3,11 +3,12 @@ import { createPortal } from "react-dom";
 import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
-import { initials, dateline } from "../lib/format";
-import { pts as fmtPts } from "../lib/calls";
-import { getFlag, setDisplayName, watchAd } from "../lib/api";
+import { initials } from "../lib/format";
+import { getFlag, setDisplayName, setLanguage, watchAd } from "../lib/api";
+import { LANGS, dictFor, translateError, useI18n, type Lang } from "../i18n";
 
 export const AD_SECONDS = 30;
+export const AD_REWARD = 0.5;
 
 // The ten icons, mirroring pool.icons so an avatar renders without waiting for a fetch. The
 // database is still the authority on who has earned what — this is only how they look.
@@ -21,9 +22,10 @@ export const ICON_RARITY: Record<string, string> = {
 };
 
 export function Avatar({ name, icon, me, sm }: { name: string | null | undefined; icon?: string | null; me?: boolean; sm?: boolean }) {
+  const { t } = useI18n();
   const glyph = icon ? ICON_GLYPH[icon] : undefined;
   const cls = "av" + (me ? " me" : "") + (sm ? " sm" : "") + (glyph ? ` ico r-${ICON_RARITY[icon!] ?? "common"}` : "");
-  return <span className={cls} title={glyph ? undefined : (name ?? undefined)}>{glyph ?? (me ? "YO" : initials(name))}</span>;
+  return <span className={cls} title={glyph ? undefined : (name ?? undefined)}>{glyph ?? (me ? t.common.you.slice(0, 2).toUpperCase() : initials(name))}</span>;
 }
 
 export function Pips({ n }: { n: number }) {
@@ -35,6 +37,7 @@ export function Bar({ pct, width }: { pct: number; width?: number }) {
 }
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const { t } = useI18n();
   useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
   // rendered on <body>: an animated (transformed) ancestor would otherwise become the box that
   // position:fixed is measured against, and a dialog opened on a long page would land off-screen
@@ -43,7 +46,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 className="display" style={{ margin: 0 }}>{title}</h3>
-          <button className="btn ghost" onClick={onClose}>Close</button>
+          <button className="btn ghost" onClick={onClose}>{t.common.close}</button>
         </div>
         {children}
       </div>
@@ -53,19 +56,52 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 }
 
 export function Empty({ children }: { children: ReactNode }) { return <div className="empty">{children}</div>; }
-export function Spinner() { return <div className="spinner">Loading…</div>; }
-export function ErrorBox({ msg }: { msg: string | null }) { return msg ? <div className="error">{msg}</div> : null; }
+export function Spinner() { const { t } = useI18n(); return <div className="spinner">{t.common.loading}</div>; }
+
+// §i18n the database refuses in English; the player reads it in their own language
+export function ErrorBox({ msg }: { msg: string | null }) {
+  const { t } = useI18n();
+  const said = translateError(msg, t);
+  return said ? <div className="error">{said}</div> : null;
+}
 
 export function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return <button type="button" className={"switch" + (on ? " on" : "")} onClick={() => onChange(!on)} aria-pressed={on}><i /></button>;
 }
 
+// §i18n the switcher. The choice is kept on the profile when there is one to keep it on, so the
+// mails follow the app; signed out, this browser remembers it.
+export function LangPicker({ full }: { full?: boolean }) {
+  const { lang, setLang, t } = useI18n();
+  const { session, refreshProfile } = useAuth();
+  const choose = async (l: Lang) => {
+    setLang(l);
+    if (!session) return;
+    try { await setLanguage(l); await refreshProfile(); } catch { /* the app is already in it; the next visit retries */ }
+  };
+  if (full) {
+    return (
+      <div className="row-of">
+        {LANGS.map((l) => (
+          <button key={l} className={"chip" + (lang === l ? " on" : "")} onClick={() => choose(l)} lang={l}>{dictFor(l).name}</button>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <select className="lang-select" aria-label={t.common.language} value={lang} onChange={(e) => choose(e.target.value as Lang)}>
+      {LANGS.map((l) => <option key={l} value={l}>{dictFor(l).short}</option>)}
+    </select>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const { profile, refreshProfile } = useAuth();
+  const { t, fmt } = useI18n();
   const [ads, setAds] = useState(false);
   const [adsOn, setAdsOn] = useState(false);
   useEffect(() => { getFlag("rewarded_ads").then(setAdsOn).catch(() => {}); }, []);
-  const items: Array<[string, string]> = [["/", "Board"], ["/crews", "Crews"], ["/album", "Album"], ["/table", "Table"], ["/you", "You"]];
+  const items: Array<[string, string]> = [["/", t.nav.board], ["/crews", t.nav.crews], ["/album", t.nav.album], ["/table", t.nav.table], ["/you", t.nav.you]];
   return (
     <div className="wrap">
       <div className="topbar">
@@ -74,15 +110,16 @@ export function Shell({ children }: { children: ReactNode }) {
           {items.map(([to, label]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "on" : "")}>{label}</NavLink>)}
         </nav>
         <div className="me">
-          {profile && <Link to="/you" title="Your points"><span className="pts">{fmtPts(profile.balance)}</span> <span className="tiny">pts</span></Link>}
-          {adsOn && <button className="btn ghost tiny-btn" onClick={() => setAds(true)}>Get points</button>}
-          {profile && profile.streak > 0 && <span className="tag hit">{profile.streak}-day streak</span>}
-          <Link to="/settings" title="Settings"><Avatar name={profile?.display_name} icon={profile?.icon} me={!profile?.icon} /></Link>
-          <button className="btn ghost tiny-btn" onClick={() => supabase.auth.signOut()}>Sign out</button>
+          {profile && <Link to="/you" title={t.shell.yourPoints}><span className="pts">{fmt.pts(profile.balance)}</span> <span className="tiny">{t.common.pts}</span></Link>}
+          {adsOn && <button className="btn ghost tiny-btn" onClick={() => setAds(true)}>{t.shell.getPoints}</button>}
+          {profile && profile.streak > 0 && <span className="tag hit">{t.shell.streak(profile.streak)}</span>}
+          <LangPicker />
+          <Link to="/settings" title={t.shell.settings}><Avatar name={profile?.display_name} icon={profile?.icon} me={!profile?.icon} /></Link>
+          <button className="btn ghost tiny-btn" onClick={() => supabase.auth.signOut()}>{t.shell.signOut}</button>
         </div>
       </div>
       {ads && <AdModal onClose={() => { setAds(false); refreshProfile(); }} onCredited={() => refreshProfile()} />}
-      <div className="eyebrow" style={{ marginBottom: 10 }}>{dateline()}</div>
+      <div className="eyebrow" style={{ marginBottom: 10 }}>{fmt.dateline()}</div>
       <NamePrompt />
       {children}
     </div>
@@ -92,24 +129,26 @@ export function Shell({ children }: { children: ReactNode }) {
 // §5.1: first sign-in asks for a display name
 function NamePrompt() {
   const { profile, refreshProfile } = useAuth();
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
   if (!profile || profile.display_name) return null;
   const save = async () => { try { await setDisplayName(name); await refreshProfile(); } catch (e: any) { setErr(e.message); } };
   return (
-    <Modal title="What do we call you?" onClose={() => {}}>
-      <p className="muted">This is the name your crew sees on the table and in the room. You can change it later in settings.</p>
-      <label className="field"><span>Display name</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mina H." autoFocus /></label>
+    <Modal title={t.namePrompt.title} onClose={() => {}}>
+      <p className="muted">{t.namePrompt.blurb}</p>
+      <label className="field"><span>{t.namePrompt.label}</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t.namePrompt.placeholder} autoFocus /></label>
       <ErrorBox msg={err} />
-      <button className="btn big" disabled={name.trim().length < 2} onClick={save}>Let me in</button>
+      <button className="btn big" disabled={name.trim().length < 2} onClick={save}>{t.namePrompt.go}</button>
     </Modal>
   );
 }
 
 // §4 "Get points": a rewarded-video placeholder. The countdown has to run out before the reward
-// can be collected, and the reward itself — 100 points, ten a day — is granted and capped by the
-// database, not here. Swap the panel below for a real provider's player; nothing else moves.
-export function AdModal({ onClose, onCredited }: { onClose: () => void; onCredited: (balance: number) => void }) {
+// can be collected, and the reward itself — half a point, ten a day — is granted and capped by
+// the database, not here. Swap the panel below for a real provider's player; nothing else moves.
+export function AdModal({ onClose, onCredited, reward = AD_REWARD }: { onClose: () => void; onCredited: (balance: number) => void; reward?: number }) {
+  const { t, fmt } = useI18n();
   const [left, setLeft] = useState(AD_SECONDS);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -117,8 +156,8 @@ export function AdModal({ onClose, onCredited }: { onClose: () => void; onCredit
 
   useEffect(() => {
     if (done) return;
-    const t = setInterval(() => setLeft((n) => (n > 0 ? n - 1 : 0)), 1000);
-    return () => clearInterval(t);
+    const tm = setInterval(() => setLeft((n) => (n > 0 ? n - 1 : 0)), 1000);
+    return () => clearInterval(tm);
   }, [done]);
 
   const collect = async () => {
@@ -132,27 +171,27 @@ export function AdModal({ onClose, onCredited }: { onClose: () => void; onCredit
   };
 
   return (
-    <Modal title="Get points" onClose={onClose}>
+    <Modal title={t.ad.title} onClose={onClose}>
       {done ? (
         <div>
-          <div className="banner ok" role="status"><b>+{fmtPts(done.credited)} points.</b> {done.left_today > 0 ? `${done.left_today} more ${done.left_today === 1 ? "ad" : "ads"} today.` : "That is all ten for today."}</div>
+          <div className="banner ok" role="status"><b>{t.ad.credited(done.credited)}</b> {done.left_today > 0 ? t.ad.more(done.left_today) : t.ad.allDone}</div>
           <div className="row-of">
-            <button className="btn big" onClick={onClose}>Done</button>
-            {done.left_today > 0 && <button className="btn" onClick={() => { setDone(null); setLeft(AD_SECONDS); }}>Watch another</button>}
+            <button className="btn big" onClick={onClose}>{t.common.done}</button>
+            {done.left_today > 0 && <button className="btn" onClick={() => { setDone(null); setLeft(AD_SECONDS); }}>{t.ad.another}</button>}
           </div>
         </div>
       ) : (
         <div>
           <div className="ad-stub">
-            <div className="eyebrow">Advertisement · placeholder</div>
-            <div className="num lime ad-count">{left}</div>
-            <div className="small muted">{left > 0 ? "Watch to the end to collect half a point." : "Finished. Collect your points."}</div>
+            <div className="eyebrow">{t.ad.label}</div>
+            <div className="num lime ad-count">{fmt.num(left)}</div>
+            <div className="small muted">{left > 0 ? t.ad.watchOn : t.ad.watchDone}</div>
             <div className="ad-progress"><i style={{ width: `${((AD_SECONDS - left) / AD_SECONDS) * 100}%` }} /></div>
           </div>
-          <p className="tiny muted">A real rewarded-video player goes here. Until then this is a 30-second stand-in: the reward, and the ten-a-day limit, are counted in the database either way. Ads are a trickle by design — the points worth having come out of the pots.</p>
+          <p className="tiny muted">{t.ad.stub}</p>
           <ErrorBox msg={err} />
           <button className="btn big" disabled={left > 0 || busy} onClick={collect}>
-            {busy ? "Collecting…" : left > 0 ? `Collect 0.5 points in ${left}s` : "Collect 0.5 points"}
+            {busy ? t.ad.collecting : left > 0 ? t.ad.collectIn(reward, left) : t.ad.collect(reward)}
           </button>
         </div>
       )}

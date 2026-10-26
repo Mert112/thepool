@@ -2,9 +2,11 @@ import { useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 import { getBoard, type BoardRow } from "../lib/api";
 import { useLoad } from "../lib/auth";
-import { ErrorBox } from "../components/ui";
+import { useI18n } from "../i18n";
+import { ErrorBox, LangPicker } from "../components/ui";
 
 export default function Login() {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -23,43 +25,44 @@ export default function Login() {
   return (
     <div className="login">
       <div className="left">
-        <div className="eyebrow">Free to play · 100 points a season</div>
+        <div className="row-of" style={{ justifyContent: "space-between" }}>
+          <div className="eyebrow">{t.login.eyebrow}</div>
+          <LangPicker />
+        </div>
         <h1 className="display" style={{ marginTop: 10 }}>The <span className="lime">Pool</span></h1>
-        <p style={{ fontSize: 17, maxWidth: 460, color: "var(--text-2)" }}>
-          Call what will happen in a match and stake points on it. Every stake on a call goes into one pot, and at full time the people who were right share it out. Everyone starts a season with 100 points, and nothing is ever minted — what you win, somebody else staked. A million buys a PlayStation 5.
-        </p>
+        <p style={{ fontSize: 17, maxWidth: 460, color: "var(--text-2)" }}>{t.login.pitch}</p>
         {!sent ? (
           <form onSubmit={send} style={{ maxWidth: 420 }}>
-            <label className="field"><span>Email</span>
-              <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+            <label className="field"><span>{t.login.email}</span>
+              <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t.login.emailPlaceholder} />
             </label>
-            <button className="btn big" disabled={busy || !email}>Send me a sign-in link</button>
+            <button className="btn big" disabled={busy || !email}>{t.login.send}</button>
             <ErrorBox msg={err} />
-            <p className="small muted" style={{ marginTop: 14 }}>No password, ever. The link is good for 15 minutes.</p>
+            <p className="small muted" style={{ marginTop: 14 }}>{t.login.noPassword}</p>
           </form>
         ) : (
           <div className="panel lit" style={{ maxWidth: 420 }}>
-            <h3 className="display">Check your inbox</h3>
-            <p className="muted">A one-time link is on its way to <b style={{ color: "var(--text)" }}>{email}</b>. Open it on this device and you land signed in.</p>
-            <button className="btn ghost" onClick={() => setSent(false)}>Use a different address</button>
+            <h3 className="display">{t.login.checkInbox}</h3>
+            <p className="muted">{t.login.onItsWay} <b style={{ color: "var(--text)" }}>{email}</b>{t.login.openOnDevice}</p>
+            <button className="btn ghost" onClick={() => setSent(false)}>{t.login.differentAddress}</button>
           </div>
         )}
       </div>
       <div className="right">
-        <div className="eyebrow" style={{ marginBottom: 12 }}>Cards open right now</div>
-        {teaser.length === 0 && <div className="muted small">The board is quiet. Fixtures land here as soon as they are on.</div>}
+        <div className="eyebrow" style={{ marginBottom: 12 }}>{t.login.cardsOpen}</div>
+        {teaser.length === 0 && <div className="muted small">{t.login.quiet}</div>}
         {teaser.map((r: BoardRow) => (
           <div className="teaser" key={r.match_id}>
-            <span><span className="faint tiny" style={{ marginRight: 8 }}>{r.competition_code}</span>{r.home_team} v {r.away_team}</span>
-            <span className="lime small">{r.playing ? `${r.playing} playing` : "be the first"}</span>
+            <span><span className="faint tiny" style={{ marginRight: 8 }}>{r.competition_code}</span>{r.home_team} {t.common.v} {r.away_team}</span>
+            <span className="lime small">{r.playing ? t.login.playing(r.playing) : t.login.beTheFirst}</span>
           </div>
         ))}
         <hr className="hr" />
         <div className="small muted stack">
-          <div><b style={{ color: "var(--text)" }}>Simple card</b> — the result and the goals line. Two calls, one minute.</div>
-          <div><b style={{ color: "var(--text)" }}>Complex card</b> — adds the handicap, the exact scoreline, a goalscorer, an assist, a yellow and a red. Five minutes.</div>
-          <div><b style={{ color: "var(--text)" }}>The stake</b> — 1, 2, 5, 10, 25 or 50 on each call. The fewer people on your pick, the more of the pot it takes.</div>
-          <div><b style={{ color: "var(--text)" }}>The jackpot</b> — a call nobody lands rolls its pot into the next match in that competition.</div>
+          <div><b style={{ color: "var(--text)" }}>{t.login.simpleCard}</b>{t.login.simpleCardIs}</div>
+          <div><b style={{ color: "var(--text)" }}>{t.login.complexCard}</b>{t.login.complexCardIs}</div>
+          <div><b style={{ color: "var(--text)" }}>{t.login.theStake}</b>{t.login.theStakeIs}</div>
+          <div><b style={{ color: "var(--text)" }}>{t.login.theJackpot}</b>{t.login.theJackpotIs}</div>
         </div>
       </div>
     </div>

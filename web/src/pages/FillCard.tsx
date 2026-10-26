@@ -16,8 +16,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getCard, getCardPots, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, myCommittedStake, saveCalls, STAKES,
   type Call, type CallType, type Market, type Player, type PotRow } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
-import { countdown, fmtWhen, soon } from "../lib/format";
-import { clashes, isPlayerMarket, lineOf, offered, perPoint, pickText as describe, pts, signed,
+import { soon } from "../lib/format";
+import { translateError, useI18n } from "../i18n";
+import { clashes, isPlayerMarket, labelOf, lineOf, marketExplainer, marketTitle, offered, partsOf, perPoint, signed,
   spreadFor, teamName as nameOf } from "../lib/calls";
 import { Bar, Empty, ErrorBox, Spinner } from "../components/ui";
 
@@ -31,6 +32,7 @@ export default function FillCard() {
   const nav = useNavigate();
   const now = useNow();
   const { session, profile, refreshProfile } = useAuth();
+  const { t, fmt } = useI18n();
   const uid = session!.user.id;
   const [picks, setPicks] = useState<Picks>({});
   const [stakes, setStakes] = useState<Partial<Record<CallType, number>>>({});
@@ -42,9 +44,9 @@ export default function FillCard() {
 
   const { data, error, loading } = useLoad(async () => {
     const card = await getCard(id!);
-    if (!card) throw new Error("This card does not exist or is not yours to see.");
+    if (!card) throw new Error(t.fill.noSuchCard);
     const match = await getMatch(card.match_id);
-    if (!match) throw new Error("Fixture missing.");
+    if (!match) throw new Error(t.fill.noFixture);
     const [markets, entry, crowd, squads, committed, pots] = await Promise.all([
       getMarkets(), getMyEntry(card.id, uid), getCrowd(card.id), getSquads(match.home_team_id, match.away_team_id),
       myCommittedStake(), getCardPots(card.id),
@@ -67,7 +69,7 @@ export default function FillCard() {
   }, [data]);
 
   const editable = data ? data.card.status === "open" && new Date(data.match.utc_date).getTime() > now : false;
-  const titleOf = (c: CallType) => data?.markets.find((x) => x.call_type === c)?.title ?? c;
+  const titleOf = (c: CallType) => { const k = data?.markets.find((x) => x.call_type === c); return k ? marketTitle(k, t) : t.markets[c]?.title ?? c; };
   const stakeOf = (c: CallType) => stakes[c] ?? DEFAULT_STAKE;
 
   // a new pick replaces any call it contradicts (the server refuses hedged cards), loudly and undoably
@@ -89,6 +91,19 @@ export default function FillCard() {
   const setStake = (k: CallType, n: number) => { setSaved(null); setErr(null); setStakes((s) => ({ ...s, [k]: n })); };
 
   const slip = useMemo(() => (data?.markets ?? []).filter((k) => picks[k.call_type]), [data, picks]);
+  // the pot on each call, and what a point on each pick is worth at the split as it stands.
+  // Declared here, above the first caller: `payout` runs during the render that hydrates a saved
+  // entry, and a const declared further down is still in its dead zone at that point.
+  const potOf = (ct: CallType) => (data?.pots ?? []).find((p) => p.call_type === ct);
+  const pickRow = (ct: CallType, key: string): PotRow | undefined => (data?.pots ?? []).find((p) => p.call_type === ct && p.key === key);
+  // the key card_pots() builds for a pick, so an option can look up its own price
+  const keyOf = (c: Call): string =>
+    c.call_type === "winner" ? (c.pick === "draw" ? "draw" : String(c.team_id))
+    : c.call_type === "draw" || c.call_type === "total" ? String(c.yes)
+    : c.call_type === "spread" ? String(c.team_id)
+    : c.call_type === "score" ? `${c.home_goals}-${c.away_goals}`
+    : c.call_type === "red" ? `${c.player_id}:${c.pick ?? "any"}`
+    : String(c.player_id);
   // what a call would return if it landed, at the split as it stands: the purse on that pick
   // divided by what is on it. It moves as other people play, which is the point.
   const payout = (k: Market) => {
@@ -112,7 +127,7 @@ export default function FillCard() {
     setSaving(true); setErr(null); setSaved(null);
     try {
       const off = Object.values(picks).filter((c) => !data.markets.some((k) => k.call_type === c.call_type));
-      if (off.length) throw new Error(`${off.map((c) => `“${titleOf(c.call_type)}”`).join(" and ")} is no longer on this card. Remove it and save again.`);
+      if (off.length) throw new Error(t.fill.offCard(off.map((c) => `“${titleOf(c.call_type)}”`).join(" · ")));
       const calls: Call[] = Object.values(picks).map((c) => ({
         call_type: c.call_type, team_id: c.team_id ?? null, yes: c.yes ?? null, player_id: c.player_id ?? null,
         home_goals: c.home_goals ?? null, away_goals: c.away_goals ?? null, pick: c.pick ?? null, stake: stakeOf(c.call_type),
@@ -125,9 +140,7 @@ export default function FillCard() {
       const want = new Set(calls.map(sig)), got = new Set(stored.map(sig));
       const missing = calls.filter((c) => !got.has(sig(c))).map((c) => titleOf(c.call_type));
       const extra = stored.filter((c) => !want.has(sig(c))).map((c) => titleOf(c.call_type));
-      if (missing.length || extra.length) {
-        throw new Error(`Your card did not save as you set it. ${missing.length ? `${missing.join(", ")} did not save. ` : ""}${extra.length ? `${extra.join(", ")} is on the card but not as you set it. ` : ""}Nothing is lost — check the calls below and save again.`);
-      }
+      if (missing.length || extra.length) throw new Error(t.fill.readBack(missing.join(", "), extra.join(", ")));
       setSaved({ calls: stored });
       setClash(null);
       refreshProfile();
@@ -137,32 +150,21 @@ export default function FillCard() {
         state: { saved: {
           n: stored.length,
           staked: stored.reduce((s, c) => s + (c.stake ?? 0), 0),
-          calls: stored.map((c) => `${titleOf(c.call_type)} — ${describe(c, data.match, playerNameOf(data.squads))} · ${c.stake}`),
+          calls: stored.map((c) => `${titleOf(c.call_type)} — ${pickOf(c)} · ${c.stake}`),
         } },
       });
-    } catch (e: any) { setErr(e.message ?? String(e)); }
+    } catch (e: any) { setErr(translateError(e.message ?? String(e), t)); }
     setSaving(false);
   };
 
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorBox msg={error} />;
-  const { card, match, markets, crowd, squads, pots } = data!;
-  // the pot on each call, and what a point on each pick is worth at the split as it stands
-  const potOf = (ct: CallType) => pots.find((p) => p.call_type === ct);
-  const pickRow = (ct: CallType, key: string): PotRow | undefined => pots.find((p) => p.call_type === ct && p.key === key);
-  // the key card_pots() builds for a pick, so an option can look up its own price
-  const keyOf = (c: Call): string =>
-    c.call_type === "winner" ? (c.pick === "draw" ? "draw" : String(c.team_id))
-    : c.call_type === "draw" || c.call_type === "total" ? String(c.yes)
-    : c.call_type === "spread" ? String(c.team_id)
-    : c.call_type === "score" ? `${c.home_goals}-${c.away_goals}`
-    : c.call_type === "red" ? `${c.player_id}:${c.pick ?? "any"}`
-    : String(c.player_id);
-  if (!match) return <Empty>Fixture missing.</Empty>;
-  const teamName = (t: number) => nameOf(match, t);
+  const { card, match, markets, crowd, squads } = data!;
+  if (!match) return <Empty>{t.fill.noFixture}</Empty>;
+  const teamName = (t2: number) => nameOf(match, t2);
   const playerName = playerNameOf(squads);
   const crowdFor = (ct: CallType) => crowd.filter((c) => c.call_type === ct).sort((a, b) => b.n - a.n);
-  const pickText = (c: Call) => describe(c, match, playerName);
+  const pickOf = (c: Call) => labelOf(partsOf(c, match, playerName), t);
   const sides = [match.home_team_id, match.away_team_id];
 
   // every option wears its price: what one point on it returns if it comes in, at the split as it
@@ -172,7 +174,7 @@ export default function FillCard() {
     const pp = row ? perPoint(row.purse, row.pick_stake) : null;
     return (
       <button key={label} disabled={!editable} className={"opt" + (on ? " on" : "")} onClick={() => set(k.call_type, on ? null : v)}>
-        {label}<span className="odds" title={pp == null ? "Nobody is on this yet" : "Returned per point staked, at the split as it stands"}>{pp == null ? "—" : `${pts(pp)}×`}</span>
+        {label}<span className="odds" title={pp == null ? t.fill.perPointNobody : t.fill.perPointWhat}>{pp == null ? t.common.dash : `${fmt.pts(pp)}×`}</span>
       </button>
     );
   };
@@ -181,38 +183,31 @@ export default function FillCard() {
     <div>
       <div className="grid two">
         <div>
-          <div className="eyebrow">{match.competition_name} · {fmtWhen(match.utc_date)} · {card.crew_id ? card.crews?.name : "Open card"}</div>
-          <h2 className="display" style={{ margin: "6px 0 4px" }}>{match.home_team} v {match.away_team}</h2>
+          <div className="eyebrow">{match.competition_name} · {fmt.when(match.utc_date)} · {card.crew_id ? card.crews?.name : t.match.openCard}</div>
+          <h2 className="display" style={{ margin: "6px 0 4px" }}>{match.home_team} {t.common.v} {match.away_team}</h2>
           <div className="small num" style={{ marginBottom: 10, color: soon(match.utc_date, now) ? "var(--magenta)" : "var(--soft)" }}>
-            {editable ? `Locks in ${countdown(match.utc_date, now)} · edit as often as you like until then` : "This card is locked."}
+            {editable ? t.fill.locksIn(fmt.countdown(match.utc_date, now)) : t.fill.locked}
           </div>
-          <div className="tiny muted" style={{ marginBottom: 16 }}>
-            Every call carries a stake, from a single point, and every stake on a call goes into one pot.
-            Nothing leaves your balance until kick-off. At full time a void is handed back in full, the
-            house takes 10% of what is left, and the rest is shared among the right answers in proportion
-            to what they staked — so a pick is worth more the fewer people are on it. Where nobody landed
-            a call last time out, what they lost is carried here as a jackpot on top.
-          </div>
+          <div className="tiny muted" style={{ marginBottom: 16 }}>{t.fill.rules}</div>
 
-          {err && <div className="banner bad" role="alert"><div><b>Not saved.</b> {err}</div></div>}
+          {err && <div className="banner bad" role="alert"><div><b>{t.fill.notSaved}</b> {err}</div></div>}
           {saved && (
             <div className="banner ok" role="status">
-              <b>Saved ✓</b>{" "}
+              <b>{t.common.saved}</b>{" "}
               {saved.calls.length === 0
-                ? "Your card is withdrawn — you have no calls on this match."
-                : `${saved.calls.length} ${saved.calls.length === 1 ? "call is" : "calls are"} on your card: ${saved.calls.map((c) => `${titleOf(c.call_type)} — ${pickText(c)}`).join(" · ")}.`}
+                ? t.fill.savedWithdrawn
+                : t.fill.savedCalls(saved.calls.length, saved.calls.map((c) => `${titleOf(c.call_type)} — ${pickOf(c)}`).join(" · "))}
             </div>
           )}
           {clash && (
             <div className="banner warn" role="alert">
               <div>
-                <b>{clash.dropped.map((c) => `“${titleOf(c)}”`).join(" and ")} removed.</b>{" "}
-                It cannot land alongside your “{titleOf(clash.by)}” pick, and the card is refused if both are on it.
-                Pick it again a different way, or undo.
+                <b>{t.fill.clashTitle(clash.dropped.map((c) => `“${titleOf(c)}”`).join(" · "))}</b>{" "}
+                {t.fill.clashBody(titleOf(clash.by))}
               </div>
               <div className="row-of">
-                <button className="btn tiny-btn" onClick={undoClash}>Undo</button>
-                <button className="btn ghost tiny-btn" onClick={() => setClash(null)}>Dismiss</button>
+                <button className="btn tiny-btn" onClick={undoClash}>{t.common.undo}</button>
+                <button className="btn ghost tiny-btn" onClick={() => setClash(null)}>{t.common.dismiss}</button>
               </div>
             </div>
           )}
@@ -227,46 +222,44 @@ export default function FillCard() {
             const top = crowdFor(k.call_type)[0];
             return (
               <div key={k.call_type} className={"market" + (on ? " on" : "") + (dropped ? " dropped" : "")} style={{ "--i": i } as CSSProperties}>
-                {dropped && <div className="dropped-flag">Removed — it clashed with your “{titleOf(clash!.by)}” pick. Nothing here will be saved until you pick again.</div>}
+                {dropped && <div className="dropped-flag">{t.fill.droppedFlag(titleOf(clash!.by))}</div>}
                 <div className="head">
                   <div>
-                    <h3 className="display" style={{ margin: 0 }}>{k.title}</h3>
+                    <h3 className="display" style={{ margin: 0 }}>{marketTitle(k, t)}</h3>
                     {editable && !!potOf(k.call_type)?.jackpot && (
-                      <div className="jackpot" title="Nobody landed this call last time out. What they lost is carried here, and shared among whoever lands it now.">
-                        Jackpot: +{pts(potOf(k.call_type)!.jackpot)} points
-                      </div>
+                      <div className="jackpot" title={t.fill.jackpotWhy}>{t.fill.jackpot(fmt.pts(potOf(k.call_type)!.jackpot))}</div>
                     )}
-                    <div className="small muted explainer">{k.explainer}</div>
+                    <div className="small muted explainer">{marketExplainer(k, t)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div className="pts">{pts(potOf(k.call_type)?.pot ?? 0)}</div>
-                    <div className="tiny muted">in the pot{potOf(k.call_type)?.jackpot ? ", plus the jackpot" : ""}</div>
-                    {on && editable && <button className="remove-call" onClick={() => set(k.call_type, null)}>Remove</button>}
+                    <div className="pts">{fmt.pts(potOf(k.call_type)?.pot ?? 0)}</div>
+                    <div className="tiny muted">{potOf(k.call_type)?.jackpot ? t.fill.inThePotPlus : t.fill.inThePot}</div>
+                    {on && editable && <button className="remove-call" onClick={() => set(k.call_type, null)}>{t.common.remove}</button>}
                   </div>
                 </div>
 
                 {k.call_type === "winner" && (
                   <div className="opts">
                     {opt(k, !!cur && cur.pick !== "draw" && cur.team_id === match.home_team_id, teamName(match.home_team_id), { call_type: "winner", team_id: match.home_team_id })}
-                    {opt(k, cur?.pick === "draw", "Draw", { call_type: "winner", pick: "draw" })}
+                    {opt(k, cur?.pick === "draw", t.pick.draw, { call_type: "winner", pick: "draw" })}
                     {opt(k, !!cur && cur.pick !== "draw" && cur.team_id === match.away_team_id, teamName(match.away_team_id), { call_type: "winner", team_id: match.away_team_id })}
                   </div>
                 )}
                 {k.call_type === "total" && (
                   <div className="opts">
-                    {opt(k, cur?.yes === true, `Over ${lineOf(match)}`, { call_type: "total", yes: true })}
-                    {opt(k, cur?.yes === false, `Under ${lineOf(match)}`, { call_type: "total", yes: false })}
+                    {opt(k, cur?.yes === true, t.pick.over(String(lineOf(match))), { call_type: "total", yes: true })}
+                    {opt(k, cur?.yes === false, t.pick.under(String(lineOf(match))), { call_type: "total", yes: false })}
                   </div>
                 )}
                 {k.call_type === "spread" && (
                   <div className="opts">
-                    {sides.map((t) => opt(k, cur?.team_id === t, `${teamName(t)} ${signed(spreadFor(match, t)!)}`, { call_type: "spread", team_id: t }))}
+                    {sides.map((tm) => opt(k, cur?.team_id === tm, t.pick.handicap(teamName(tm), signed(spreadFor(match, tm)!)), { call_type: "spread", team_id: tm }))}
                   </div>
                 )}
                 {k.call_type === "draw" && (
                   <div className="opts">
-                    {opt(k, cur?.yes === true, "Yes — level at 90", { call_type: "draw", yes: true })}
-                    {opt(k, cur?.yes === false, "No — someone wins", { call_type: "draw", yes: false })}
+                    {opt(k, cur?.yes === true, t.pick.drawYes, { call_type: "draw", yes: true })}
+                    {opt(k, cur?.yes === false, t.pick.drawNo, { call_type: "draw", yes: false })}
                   </div>
                 )}
                 {k.call_type === "score" && (
@@ -281,44 +274,44 @@ export default function FillCard() {
                         </div>
                       );
                     })}
-                    {cur && <button className="btn ghost" disabled={!editable} onClick={() => set("score", null)}>Clear</button>}
+                    {cur && <button className="btn ghost" disabled={!editable} onClick={() => set("score", null)}>{t.common.clear}</button>}
                   </div>
                 )}
                 {isPlayerMarket(k) && (
                   <div className="row-of" style={{ marginTop: 14 }}>
                     <select className="select" style={{ width: 220 }} disabled={!editable} value={sd} onChange={(e) => { setSide((s) => ({ ...s, [k.call_type]: e.target.value as "h" | "a" })); set(k.call_type, null); }}>
-                      <option value="h">{match.home_team} (home)</option>
-                      <option value="a">{match.away_team} (away)</option>
+                      <option value="h">{t.fill.home(match.home_team)}</option>
+                      <option value="a">{t.fill.away(match.away_team)}</option>
                     </select>
                     <select className="select" style={{ width: 260 }} disabled={!editable} value={cur?.player_id ?? ""} onChange={(e) => set(k.call_type, e.target.value ? { call_type: k.call_type, player_id: Number(e.target.value), pick: k.call_type === "red" ? cur?.pick ?? null : null } : null)}>
-                      <option value="">— pick a player —</option>
+                      <option value="">{t.fill.pickPlayer}</option>
                       {squad.map((p) => <option key={p.id} value={p.id}>{p.name}{p.position ? ` · ${p.position}` : ""}</option>)}
                     </select>
-                    {squad.length === 0 && <span className="tiny magenta">Squad still loading for this side — check back in a minute.</span>}
+                    {squad.length === 0 && <span className="tiny magenta">{t.fill.squadLoading}</span>}
                   </div>
                 )}
                 {k.call_type === "red" && cur?.player_id && (k.options ?? []).length > 0 && (
                   <div style={{ marginTop: 12 }}>
-                    <div className="tiny muted" style={{ marginBottom: 6 }}>When? Optional — name the window for a far bigger multiplier. Stoppage time counts in its half's last window.</div>
+                    <div className="tiny muted" style={{ marginBottom: 6 }}>{t.fill.redWindow}</div>
                     <div className="opts" style={{ marginTop: 0 }}>
-                      {opt(k, !cur.pick, "Any time", { call_type: "red", player_id: cur.player_id, pick: null })}
-                      {(k.options ?? []).map((w) => opt(k, cur.pick === w, `${w}'`, { call_type: "red", player_id: cur.player_id, pick: w }))}
+                      {opt(k, !cur.pick, t.pick.anyTime, { call_type: "red", player_id: cur.player_id, pick: null })}
+                      {(k.options ?? []).map((w) => opt(k, cur.pick === w, t.pick.window(w), { call_type: "red", player_id: cur.player_id, pick: w }))}
                     </div>
                   </div>
                 )}
 
                 {on && (
                   <div className="stake-row">
-                    <span className="eyebrow">Stake</span>
+                    <span className="eyebrow">{t.fill.stake}</span>
                     {STAKES.map((n) => (
-                      <button key={n} disabled={!editable} className={"chip stake" + (stakeOf(k.call_type) === n ? " on" : "")} onClick={() => setStake(k.call_type, n)}>{n}</button>
+                      <button key={n} disabled={!editable} className={"chip stake" + (stakeOf(k.call_type) === n ? " on" : "")} onClick={() => setStake(k.call_type, n)}>{fmt.num(n)}</button>
                     ))}
-                    <span className="stake-pay">{payout(k) == null ? <>the whole purse, if nobody else joins you</> : <>about <b>{pts(payout(k))}</b> back if it lands</>}</span>
+                    <span className="stake-pay">{payout(k) == null ? t.fill.wholePurse : <>{t.fill.about} <b>{fmt.pts(payout(k))}</b> {t.fill.backIfLands}</>}</span>
                   </div>
                 )}
 
                 <div className="crowd" style={{ marginTop: 14 }}>
-                  {top ? <>{top.pct}% · {top.label}<Bar pct={top.pct} width={260} /></> : <span className="faint">Nobody has called this yet.</span>}
+                  {top ? <>{top.pct}% · {labelOf(top.parts, t)}<Bar pct={top.pct} width={260} /></> : <span className="faint">{t.fill.nobodyCalled}</span>}
                 </div>
               </div>
             );
@@ -327,25 +320,23 @@ export default function FillCard() {
 
         <div className="stack">
           <div className="panel">
-            <div className="eyebrow" style={{ marginBottom: 8 }}>Your points</div>
-            <div className="num lime" style={{ fontSize: 40, lineHeight: 1 }}>{pts(profile?.balance)}</div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>{t.fill.yourPoints}</div>
+            <div className="num lime" style={{ fontSize: 40, lineHeight: 1 }}>{fmt.pts(profile?.balance)}</div>
             <div className="small muted" style={{ marginTop: 6 }}>
-              {data!.elsewhere > 0
-                ? <>{data!.elsewhere} is already promised to other open cards, leaving <b>{Math.max(0, purse)}</b> for this one.</>
-                : <>Nothing is promised elsewhere, so all of it is available here.</>}
+              {data!.elsewhere > 0 ? t.fill.promised(fmt.pts(data!.elsewhere), fmt.pts(Math.max(0, purse))) : t.fill.nothingPromised}
             </div>
             <hr className="hr" />
-            <div className="small" style={{ display: "flex", justifyContent: "space-between" }}><span className="muted">Staked on this card</span><b className={overdrawn ? "magenta" : undefined}>{staked}</b></div>
-            <div className="small" style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}><span className="muted">Back if it all lands</span><b className="lime">{pts(toWin)}</b></div>
-            {overdrawn && <div className="tiny magenta" style={{ marginTop: 8 }}>That is more than you have left. Lower a stake, drop a call, or get more points on your profile.</div>}
+            <div className="small" style={{ display: "flex", justifyContent: "space-between" }}><span className="muted">{t.fill.stakedOnCard}</span><b className={overdrawn ? "magenta" : undefined}>{fmt.pts(staked)}</b></div>
+            <div className="small" style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}><span className="muted">{t.fill.backIfAll}</span><b className="lime">{fmt.pts(toWin)}</b></div>
+            {overdrawn && <div className="tiny magenta" style={{ marginTop: 8 }}>{t.fill.overdrawn}</div>}
           </div>
           <div className="panel">
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Where the pool has gone</div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>{t.fill.whereThePool}</div>
             {markets.map((k) => { const rows = crowdFor(k.call_type).slice(0, 2); return (
               <div key={k.call_type} style={{ padding: "8px 0", borderBottom: "1px solid var(--raise)" }}>
-                <div className="tiny muted" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>{k.title}</div>
-                {rows.length === 0 && <div className="faint small">—</div>}
-                {rows.map((r) => <div key={r.key} className="small" style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><span>{r.label}</span><span className="lime">{r.pct}%</span></div>)}
+                <div className="tiny muted" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>{marketTitle(k, t)}</div>
+                {rows.length === 0 && <div className="faint small">{t.common.dash}</div>}
+                {rows.map((r) => <div key={r.key} className="small" style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><span>{labelOf(r.parts, t)}</span><span className="lime">{r.pct}%</span></div>)}
               </div>
             ); })}
           </div>
@@ -354,21 +345,21 @@ export default function FillCard() {
 
       <div className="slip">
         <div className="items">
-          {slip.length === 0 && <span className="muted small">{data!.entry ? "Every call removed — save to withdraw from this card." : "No calls yet. Skipping a call costs nothing — a partial card is always valid."}</span>}
-          {slip.map((k) => <span className="item" key={k.call_type}>{k.title}: {pickText(picks[k.call_type]!)} <span className="muted">{stakeOf(k.call_type)} →</span> <b>{payout(k) == null ? "?" : pts(payout(k))}</b>{editable && <button onClick={() => set(k.call_type, null)} title="Remove">×</button>}</span>)}
+          {slip.length === 0 && <span className="muted small">{data!.entry ? t.fill.slipWithdraw : t.fill.slipEmpty}</span>}
+          {slip.map((k) => <span className="item" key={k.call_type}>{marketTitle(k, t)}: {pickOf(picks[k.call_type]!)} <span className="muted">{fmt.num(stakeOf(k.call_type))} →</span> <b>{payout(k) == null ? "?" : fmt.pts(payout(k))}</b>{editable && <button onClick={() => set(k.call_type, null)} title={t.common.remove}>×</button>}</span>)}
         </div>
         <div style={{ textAlign: "right" }}>
-          <div className="total" key={toWin}>{pts(toWin)}</div>
-          <div className="tiny muted">{staked} staked · at today's split</div>
+          <div className="total" key={toWin}>{fmt.pts(toWin)}</div>
+          <div className="tiny muted">{t.fill.slipTotal(fmt.pts(staked))}</div>
         </div>
         {editable ? (
           <button className="btn big" disabled={saving || overdrawn || (slip.length === 0 && !data!.entry)} onClick={save}>
-            {saving ? "Saving…" : !data!.entry ? "Save my card" : slip.length ? "Update my card" : "Withdraw my card"}
+            {saving ? t.common.saving : !data!.entry ? t.fill.saveCard : slip.length ? t.fill.updateCard : t.fill.withdrawCard}
           </button>
         ) : (
-          <button className="btn big" onClick={() => nav(`/card/${card.id}/live`)}>{card.status === "settled" ? "See the recap" : "Watch it live"}</button>
+          <button className="btn big" onClick={() => nav(`/card/${card.id}/live`)}>{card.status === "settled" ? t.match.seeRecap : t.match.watchLive}</button>
         )}
-        {err && <div className="notice bad">Not saved — {err}</div>}
+        {err && <div className="notice bad">{t.fill.notSavedInline(err)}</div>}
       </div>
     </div>
   );

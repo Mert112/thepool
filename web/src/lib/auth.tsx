@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import { getProfile, type Profile } from "./api";
+import { getProfile, setLanguage, type Profile } from "./api";
+import { useI18n } from "../i18n";
 
 type Auth = { session: Session | null; profile: Profile | null; loading: boolean; refreshProfile: () => Promise<void> };
 const Ctx = createContext<Auth>({ session: null, profile: null, loading: true, refreshProfile: async () => {} });
@@ -10,26 +11,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const { syncProfile } = useI18n();
+
+  // §i18n a profile that has already chosen a language decides what the app speaks; one that
+  // never has takes the browser's answer, and we write it back so the mails match the screen.
+  const adopt = (p: Profile | null) => {
+    setProfile(p);
+    if (!p) return;
+    const guessed = syncProfile(p.language);
+    if (guessed) setLanguage(guessed).catch(() => {});
+  };
 
   const refreshProfile = async () => {
     const { data } = await supabase.auth.getSession();
     const uid = data.session?.user.id;
-    setProfile(uid ? await getProfile(uid) : null);
+    adopt(uid ? await getProfile(uid) : null);
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
-      if (data.session) setProfile(await getProfile(data.session.user.id));
+      if (data.session) adopt(await getProfile(data.session.user.id));
       setLoading(false);
     });
     // never await Supabase calls inside this callback (it runs under the auth lock)
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       if (!s) { setProfile(null); return; }
-      setTimeout(() => { getProfile(s.user.id).then(setProfile).catch(() => {}); }, 0);
+      setTimeout(() => { getProfile(s.user.id).then(adopt).catch(() => {}); }, 0);
     });
     return () => sub.subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <Ctx.Provider value={{ session, profile, loading, refreshProfile }}>{children}</Ctx.Provider>;

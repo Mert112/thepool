@@ -1,5 +1,7 @@
 // Thin data layer over Supabase. Every write goes through an rpc_* function in the database.
 import { supabase } from "./supabase";
+import type { Lang } from "../i18n/lang";
+import type { Parts } from "./calls";
 
 // The Pool is football only (0017). These are the eight live markets, plus the two kept disabled.
 export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "spread";
@@ -27,7 +29,8 @@ export type Entry = { id: string; card_id: string; user_id: string; points: numb
 export const STAKES = [1, 2, 5, 10, 25, 50] as const;
 export type Player = { id: number; team_id: number | null; name: string; position: string | null };
 export type Crew = { id: string; name: string; description: string | null; mode: "simple" | "complex"; owner_id: string; rival_crew_id: string | null; created_at: string };
-export type Profile = { id: string; display_name: string | null; streak: number; balance: number; icon: string };
+export type Profile = { id: string; display_name: string | null; streak: number; balance: number; icon: string;
+  language: Lang | null };
 
 // §profile icons — ten of them, nine earned. The catalogue lives in pool.icons; the glyph map in
 // components/ui.tsx mirrors it so an avatar can render without waiting for a fetch.
@@ -123,10 +126,13 @@ export async function getEvents(matchId: number): Promise<MatchEvent[]> {
   return data as MatchEvent[];
 }
 
-export async function getCrowd(cardId: string) {
+// §i18n the crowd split carries the call in pieces as well as in English, so the app can say it
+// in the language the player chose (0023)
+export type CrowdRow = { call_type: CallType; label: string; parts: Parts; key: string; n: number; pct: number };
+export async function getCrowd(cardId: string): Promise<CrowdRow[]> {
   const { data, error } = await supabase.rpc("card_crowd", { p_card: cardId });
   if (error) fail(error);
-  return (data ?? []) as Array<{ call_type: CallType; label: string; key: string; n: number; pct: number }>;
+  return (data ?? []) as CrowdRow[];
 }
 
 export async function openCard(matchId: number, mode: "simple" | "complex", crewId: string | null) {
@@ -283,7 +289,8 @@ export async function getMyCardMatches(userId: string): Promise<Set<number>> {
 }
 
 // §5.8 Prediction history: every card played, newest first, with each call and how it ended
-export type HistoryCall = { call_type: CallType; title: string; label: string; result: "pending" | "hit" | "miss" | "void"; points: number };
+export type HistoryCall = { call_type: CallType; title: string; label: string; parts: Parts;
+  result: "pending" | "hit" | "miss" | "void"; points: number };
 export type HistoryCard = {
   entry_id: string; card_id: string; match_id: number; mode: "simple" | "complex"; crew: string | null;
   card_status: Card["status"]; competition: string; utc_date: string;
@@ -309,12 +316,17 @@ export async function getCompetitions() {
 
 // profile & settings
 export async function getProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase.from("profiles").select("id, display_name, streak, balance, icon").eq("id", userId).maybeSingle();
+  const { data, error } = await supabase.from("profiles").select("id, display_name, streak, balance, icon, language").eq("id", userId).maybeSingle();
   if (error) fail(error);
   return data as Profile | null;
 }
 export async function setDisplayName(name: string) {
   const { error } = await supabase.rpc("rpc_set_display_name", { p_name: name });
+  if (error) fail(error);
+}
+// §i18n the choice follows the player, so the mails match the screen
+export async function setLanguage(lang: Lang) {
+  const { error } = await supabase.rpc("rpc_set_language", { p_lang: lang });
   if (error) fail(error);
 }
 export type Settings = { new_card: boolean; deadline_reminder: boolean; crew_activity: boolean; result: boolean; weekly_digest: boolean; watched_competitions: string[] };

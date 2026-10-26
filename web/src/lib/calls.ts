@@ -1,19 +1,60 @@
-// How a call reads on screen. Football only (0017).
-import type { BoardRow, Call, Market, Player } from "./api";
+// How a call reads on screen. Football only (0017), and in three languages (§i18n).
+//
+// A call is never turned into a sentence anywhere but here. `partsOf` breaks a pick into the
+// pieces that mean something — the team, the player, the line, the scoreline — and `labelOf`
+// says them in the language the app is speaking. The database sends the same pieces for calls
+// other people made (pool.call_parts, 0023), so a crowd split and a history row read the same
+// as the card they came from. Team and player names are the provider's and pass through as given.
+import type { BoardRow, Call, CallType, Market, Player } from "./api";
+import type { Dict } from "../i18n/en";
 
 export const teamName = (m: BoardRow, t: number | null | undefined) => (t === m.home_team_id ? m.home_team : t === m.away_team_id ? m.away_team : "");
 
-export function pickText(c: Call | undefined, m: BoardRow, playerName: (id: number | null | undefined) => string): string {
-  if (!c) return "No pick";
-  switch (c.call_type) {
-    case "winner": return c.pick === "draw" ? "Draw" : teamName(m, c.team_id);
-    case "draw": return c.yes ? "Yes" : "No";
-    case "total": return `${c.yes ? "Over" : "Under"} ${c.line ?? lineOf(m) ?? ""}`.trim();
-    case "spread": { const l = c.line ?? spreadFor(m, c.team_id); return `${teamName(m, c.team_id)} ${l == null ? "" : signed(l)}`.trim(); }
-    case "score": return `${c.home_goals}–${c.away_goals}`;
-    default: return `${playerName(c.player_id) || "Player"}${c.pick ? ` · ${c.pick}'` : ""}`;   // the red card's time window
+// mirrors pool.call_parts(): what a call is made of, before anyone puts words round it
+export type Parts = {
+  call_type: CallType;
+  team?: string;
+  side?: "home" | "away";
+  player?: string;
+  yes?: boolean;
+  line?: string;
+  home_goals?: number;
+  away_goals?: number;
+  pick?: string;          // 'draw' on a result call, a minute window on a red card
+};
+
+export function partsOf(c: Call, m: BoardRow, playerName: (id: number | null | undefined) => string): Parts {
+  const line = c.call_type === "total" ? c.line ?? lineOf(m) : c.call_type === "spread" ? c.line ?? spreadFor(m, c.team_id) : c.line;
+  return {
+    call_type: c.call_type,
+    team: c.team_id != null ? teamName(m, c.team_id) || undefined : undefined,
+    side: c.team_id === m.home_team_id ? "home" : c.team_id === m.away_team_id ? "away" : undefined,
+    player: c.player_id != null ? playerName(c.player_id) || undefined : undefined,
+    yes: c.yes ?? undefined,
+    line: line == null ? undefined : String(line),
+    home_goals: c.home_goals ?? undefined,
+    away_goals: c.away_goals ?? undefined,
+    pick: c.pick ?? undefined,
+  };
+}
+
+export function labelOf(p: Parts | null | undefined, t: Dict): string {
+  if (!p) return t.pick.none;
+  switch (p.call_type) {
+    case "winner": return p.pick === "draw" ? t.pick.draw : p.team ?? "";
+    case "draw":   return p.yes ? t.pick.drawYes : t.pick.drawNo;
+    case "total":  return (p.yes ? t.pick.over : t.pick.under)(p.line ?? "").trim();
+    case "spread": return t.pick.handicap(p.team ?? "", p.line == null ? "" : signed(Number(p.line))).trim();
+    case "score":  return t.pick.scoreline(p.home_goals ?? 0, p.away_goals ?? 0);
+    default:       return p.pick
+      ? t.pick.playerWindow(p.player ?? t.common.player, p.pick)
+      : t.pick.player(p.player ?? t.common.player);
   }
 }
+
+// one saved call, in the player's language
+export const pickText = (c: Call | undefined, m: BoardRow, playerName: (id: number | null | undefined) => string, t: Dict) =>
+  c ? labelOf(partsOf(c, m, playerName), t) : t.pick.none;
 
 // player markets pick a name from either squad
 export const isPlayerMarket = (k: Market) => ["scorer", "assist", "yellow", "red", "motm"].includes(k.call_type);
@@ -26,10 +67,12 @@ export const spreadFor = (m: BoardRow, team: number | null | undefined) => { con
 export const offered = (k: Market, m: BoardRow) =>
   k.call_type === "total" ? lineOf(m) != null : k.call_type === "spread" ? m.odds?.spread?.home_line != null : true;
 
-// Points carry halves now, so they are written to two places and trimmed: 100, 90.7, 2.31.
-export const pts = (n: number | null | undefined) =>
-  n == null ? "—" : (Math.round(Number(n) * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
-export const signedPts = (n: number) => (n > 0 ? `+${pts(n)}` : pts(n));
+// §i18n the title, the one-liner and the short form live in the translation files, keyed on the
+// call type. The database keeps the English, which is what a language we do not speak falls back to.
+export const marketTitle = (k: Market, t: Dict) => t.markets[k.call_type]?.title ?? k.title;
+export const marketShort = (k: Market, t: Dict) => t.markets[k.call_type]?.short ?? k.short;
+export const marketExplainer = (k: Market, t: Dict) => t.markets[k.call_type]?.explainer ?? k.explainer;
+
 // what a pick returns per point staked, at the split as it stands
 export const perPoint = (purse: number, pickStake: number) =>
   pickStake > 0 ? Math.floor((purse / pickStake) * 100) / 100 : null;
@@ -37,7 +80,7 @@ export const perPoint = (purse: number, pickStake: number) =>
 export const squadOf = (squads: Player[], teamId: number) => squads.filter((p) => p.team_id === teamId);
 
 // the live status line
-export const liveClock = (m: BoardRow) => m.clock ?? (m.minute ? `${m.minute}'` : "Live");
+export const liveClock = (m: BoardRow, t: Dict) => m.clock ?? (m.minute ? `${m.minute}'` : t.when.inPlay);
 
 // Two calls that cannot both land (mirrors pool.call_conflict in 0017). A new pick replaces any call it clashes with.
 export function clashes(a: Call, b: Call, m: BoardRow): boolean {
@@ -52,5 +95,3 @@ export function clashes(a: Call, b: Call, m: BoardRow): boolean {
   if ((p = pair("score", "total"))) { const t = p[0].home_goals! + p[0].away_goals!, line = p[1].line ?? lineOf(m) ?? 0; return p[1].yes ? t < line : t > line; }
   return false;
 }
-
-

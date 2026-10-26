@@ -2,12 +2,16 @@
 import { Fragment } from "react";
 import { getCompetitions, getMarkets, getStickers } from "../lib/api";
 import { useLoad } from "../lib/auth";
+import { marketTitle } from "../lib/calls";
+import { useI18n } from "../i18n";
 import { Bar, ErrorBox, Spinner } from "../components/ui";
 
+// the one-or-two letters in a cell: initials of the call, so they travel between languages
 const SHORT: Record<string, string> = { winner: "W", draw: "D", motm: "MOTM", score: "SC", scorer: "G", assist: "A", yellow: "Y", red: "R",
   total: "O/U", spread: "HCP" };
 
 export default function Album() {
+  const { t, fmt } = useI18n();
   const { data, error, loading } = useLoad(async () => {
     const [comps, markets, stickers] = await Promise.all([getCompetitions(), getMarkets(), getStickers()]);
     return { comps, markets, stickers };
@@ -25,13 +29,13 @@ export default function Album() {
     <div className="grid two">
       <div className="panel">
         <div className="row-of" style={{ justifyContent: "space-between", marginBottom: 14 }}>
-          <div><h2 className="display" style={{ margin: 0 }}>The album</h2><div className="muted small">Season-scoped. Nothing bought, nothing traded — only landed.</div></div>
-          <div style={{ textAlign: "right" }}><div className="num lime" style={{ fontSize: 40 }}>{total ? Math.round(filled / total * 100) : 0}%</div><div className="tiny muted">{filled} of {total}</div></div>
+          <div><h2 className="display" style={{ margin: 0 }}>{t.album.title}</h2><div className="muted small">{t.album.blurb}</div></div>
+          <div style={{ textAlign: "right" }}><div className="num lime" style={{ fontSize: 40 }}>{total ? Math.round(filled / total * 100) : 0}%</div><div className="tiny muted">{t.album.of(filled, total)}</div></div>
         </div>
         <div className="scroll-x">
           <div className="album" style={{ gridTemplateColumns: `160px repeat(${markets.length}, minmax(44px, 1fr))`, minWidth: 160 + markets.length * 50 }}>
             <div></div>
-            {markets.map((k) => <div key={k.call_type} className="tiny muted" style={{ textAlign: "center", fontWeight: 700 }} title={k.title}>{SHORT[k.call_type]}</div>)}
+            {markets.map((k) => <div key={k.call_type} className="tiny muted" style={{ textAlign: "center", fontWeight: 700 }} title={marketTitle(k, t)}>{SHORT[k.call_type]}</div>)}
             {comps.map((c) => (
               <Fragment key={c.code}>
                 <div className="lbl">{c.name}</div>
@@ -40,15 +44,15 @@ export default function Album() {
             ))}
           </div>
         </div>
-        <div className="tiny muted" style={{ marginTop: 8 }}>{markets.map((k) => `${SHORT[k.call_type]} ${k.title.replace(/^(The|A|An) /, "").toLowerCase()}`).join(" · ")}</div>
+        <div className="tiny muted" style={{ marginTop: 8 }}>{markets.map((k) => `${SHORT[k.call_type]} ${marketTitle(k, t).toLocaleLowerCase(fmt.locale)}`).join(" · ")}</div>
       </div>
       <div className="stack">
         <div className="panel">
-          <div className="eyebrow" style={{ marginBottom: 8 }}>Nearly complete</div>
-          {near.length === 0 && <div className="muted small">Land a call in a competition and it shows up here.</div>}
+          <div className="eyebrow" style={{ marginBottom: 8 }}>{t.album.nearly}</div>
+          {near.length === 0 && <div className="muted small">{t.album.nearlyEmpty}</div>}
           {near.map(({ c, n, of }) => <div key={c.code} style={{ padding: "8px 0" }}><div className="small" style={{ display: "flex", justifyContent: "space-between" }}><span>{c.name}</span><span className="lime">{n}/{of}</span></div><Bar pct={n / of * 100} /></div>)}
         </div>
-        <div className="panel small muted">A cell fills the first time you land that call in that competition. It exists to give a long-run goal to people who are not going to top the table, and to push you toward competitions and calls you avoid.</div>
+        <div className="panel small muted">{t.album.footer}</div>
       </div>
     </div>
   );
