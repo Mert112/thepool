@@ -6,12 +6,16 @@ set search_path = pool, public, extensions;
 
 -- ---------------------------------------------------------------------------
 -- 1. The data
+--
+-- What sport a row belongs to is decided by its *competition*, never by the denormalised `sport`
+-- column, which has drifted: on the hosted project 468 matches in NBA, NCAAM, NHL, NFL, WTA and
+-- MLB carry the column's 'soccer' default. Teams go by their espn_key namespace for the same
+-- reason ('soccer:1234' against 'NBA:13'), and players by the team they belong to.
 -- ---------------------------------------------------------------------------
-create temp table gone_sports (code text primary key);
-insert into gone_sports values ('basketball'), ('american_football'), ('baseball'), ('hockey'), ('tennis'), ('mma');
-
-create temp table gone_comps as select code from competitions where sport in (select code from gone_sports);
-create temp table gone_matches as select id from matches where sport in (select code from gone_sports);
+create temp table gone_comps as select code from competitions where sport <> 'soccer';
+create temp table gone_matches as select m.id from matches m join gone_comps g on g.code = m.competition_code;
+create temp table gone_teams as
+  select t.id from teams t where t.espn_key is not null and t.espn_key not like 'soccer:%';
 
 -- album entries first: stickers reference both the competition and the match, with no cascade
 delete from stickers where competition_code in (select code from gone_comps);
@@ -25,21 +29,28 @@ delete from cards where match_id in (select id from gone_matches);
 -- matches cascade to match_events, player_stats and match_props
 delete from matches where id in (select id from gone_matches);
 
+-- a player still named by a surviving call or event stays, whatever team they were on
 delete from players p
- where p.sport in (select code from gone_sports)
+ where p.team_id in (select id from gone_teams)
    and not exists (select 1 from calls c where c.player_id = p.id)
    and not exists (select 1 from match_events e where e.player_id = p.id or e.assist_player_id = p.id)
    and not exists (select 1 from player_stats s where s.player_id = p.id);
 delete from teams t
- where coalesce(t.sport, 'soccer') <> 'soccer'
+ where t.id in (select id from gone_teams)
    and not exists (select 1 from matches m where t.id in (m.home_team_id, m.away_team_id))
    and not exists (select 1 from players p where p.team_id = t.id);
 delete from competitions where code in (select code from gone_comps);
-delete from markets where sport in (select code from gone_sports);
-delete from sports where code in (select code from gone_sports);
+delete from markets where sport <> 'soccer';
+delete from sports where code <> 'soccer';
 
 -- player over/unders were a basketball and American-football market only
 drop table if exists match_props;
+
+-- the drifted column is corrected before it is constrained: everything left is football by
+-- definition, because its competition is
+update matches set sport = 'soccer' where sport <> 'soccer';
+update teams    set sport = 'soccer' where sport is not null and sport <> 'soccer';
+update players  set sport = 'soccer' where sport is not null and sport <> 'soccer';
 
 -- nothing but football from here on
 alter table competitions add constraint competitions_football_only check (sport = 'soccer');

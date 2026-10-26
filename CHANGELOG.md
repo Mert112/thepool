@@ -11,6 +11,13 @@ local Postgres from every migration and runs all three suites.
 
 `0017_football_only.sql` withdraws the six sports added between `0008` and `0016`.
 
+- **The competition decides the sport, not the column.** Applying this to production turned up a
+  real bug: 468 matches in NBA, NCAAM, NHL, NFL, WTA and MLB carried the `matches.sport` default
+  of `'soccer'`, so the old board filtered them under *Football*. A first draft of this migration
+  keyed off that column and left 468 matches orphaned against a deleted competition. It now takes
+  the sport from the competition, teams from their `espn_key` namespace (`soccer:1234` against
+  `NBA:13`), and players from the team they belong to — and it corrects the drifted column before
+  constraining it.
 - **Data gone:** basketball, American football, baseball, ice hockey, tennis and MMA — their
   competitions (NBA, WNBA, NCAAM, NFL, NCAAF, MLB, NHL, ATP, WTA, **UFC**), matches, cards,
   entries, calls, teams, players, markets and the `sports` rows themselves. `match_props` (a
@@ -180,12 +187,37 @@ These were not spelled out in the brief. Each is easy to reverse.
    scoring (`points = 10 × price`). That is gone. The column has to stay, because it also carries
    the goals line and the handicap the card is played against. The prices are now unused data.
 
+---
+
+## Deployed
+
+All three migrations are applied to the hosted project and the app is live on
+<https://thepool.today>.
+
+**What the migrations removed, exactly:** 3,048 matches, 1,589 teams, 28,029 players, 10 cards,
+4 entries, 11 calls, 6 stickers, 353 player stats, 5,226 player over/unders, 10 competitions,
+29 markets and 6 sports. All 10 deleted cards were public and already settled, and no card was
+open at the time, so nothing was in flight. Every one of those rows is backed up as JSON in
+`/root/thepool-backup-20261026/` with a README describing the restore order.
+
+**Verification.** Production was fingerprinted against the local database built from these exact
+migration files — columns, constraint definitions, RLS policies, every function signature, every
+function body (comments and whitespace normalised), table grants, column grants, function grants,
+the `markets` rows and the `stakes` rows. All ten hashes matched, so what is running is what was
+tested. Afterwards: 775 football fixtures on the board, 6 players each holding exactly 1,000
+points, and the ledger reconciling to every balance with zero mismatches. The rewritten sync has
+run on its timer and a dry full pass parsed 165 matches across all 10 football competitions.
+
 ## Things I could not verify
 
 - **No browser was available in this environment**, so the phone layout is reasoned from the CSS
-  rather than seen: one column under 700px, 44px tap targets, no page-level horizontal scroll. It is
-  worth ten seconds on a real handset.
-- **The ESPN sync was not run against the live feed** after the football-only rewrite. Its parsers
-  import cleanly and the football paths are unchanged from the code that has been running, but
-  `node sync/espn-sync.mjs --dry` on the server is the real check.
-- **`0019` has not been applied to production** at the time of writing — see the deploy note.
+  rather than seen: one column under 700px, 44px tap targets, no page-level horizontal scroll. It
+  is worth ten seconds on a real handset.
+- **No card has been played end to end under the new economy.** The settlement path is covered by
+  the tests and the functions on production are byte-identical to the tested ones, but the first
+  real card to lock at kick-off is the first time stakes will leave a real balance. The next
+  fixture is worth watching.
+- **Why the `sport` column drifted** is unexplained. `espn-sync.mjs` sets it from the competition
+  on every upsert, and the rows affected are all from 23 October onwards. The rewritten sync
+  hardcodes `'soccer'` and the check constraints now make the value unfalsifiable, so the problem
+  cannot recur — but I never found the cause.
