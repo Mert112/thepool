@@ -17,6 +17,7 @@ const STATE: Record<HistoryCall["result"], { label: string; cls: string }> = {
 const REASON: Record<LedgerRow["reason"], string> = {
   signup: "Starting points", stake: "Staked at kick-off", win: "A call landed",
   refund: "A void call, handed back", ad_reward: "Watched an ad", prize: "Prize",
+  jackpot: "A share of a jackpot",
 };
 
 export default function Profile() {

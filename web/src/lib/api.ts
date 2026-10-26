@@ -24,7 +24,7 @@ export type Card = { id: string; match_id: number; mode: "simple" | "complex"; c
 export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; stake?: number; multiplier?: number; staked?: boolean; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
 export type Entry = { id: string; card_id: string; user_id: string; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null } };
 // the five stakes a call can carry, from pool.stakes
-export const STAKES = [10, 25, 50, 100, 200] as const;
+export const STAKES = [1, 2, 5, 10, 25, 50] as const;
 export type Player = { id: number; team_id: number | null; name: string; position: string | null };
 export type Crew = { id: string; name: string; description: string | null; mode: "simple" | "complex"; owner_id: string; rival_crew_id: string | null; created_at: string };
 export type Profile = { id: string; display_name: string | null; streak: number; balance: number };
@@ -119,6 +119,16 @@ export async function saveCalls(cardId: string, calls: Call[]) {
   if (error) fail(error);
   return data as string;
 }
+// §1 the jackpot standing on each call type in a competition: what a card nobody landed rolled
+// forward, less the rake. Added to whoever lands that call next.
+export async function getJackpots(competition: string): Promise<Partial<Record<CallType, number>>> {
+  const { data, error } = await supabase.from("jackpots").select("call_type, amount").eq("competition_code", competition).gt("amount", 0);
+  if (error) fail(error);
+  const out: Partial<Record<CallType, number>> = {};
+  for (const r of (data ?? []) as Array<{ call_type: CallType; amount: number }>) out[r.call_type] = r.amount;
+  return out;
+}
+
 // feature flags (pool.app_flags): the rewarded-ad stub hides behind one
 export async function getFlag(key: string): Promise<boolean> {
   const { data, error } = await supabase.from("app_flags").select("enabled").eq("key", key).maybeSingle();
@@ -142,7 +152,7 @@ export async function myCommittedStake(): Promise<number> {
   if (error) fail(error);
   return Number(data ?? 0);
 }
-export type LedgerRow = { amount: number; reason: "signup" | "stake" | "win" | "refund" | "ad_reward" | "prize"; created_at: string };
+export type LedgerRow = { amount: number; reason: "signup" | "stake" | "win" | "refund" | "ad_reward" | "prize" | "jackpot"; created_at: string };
 export async function myLedger(limit = 30): Promise<LedgerRow[]> {
   const { data, error } = await supabase.rpc("my_ledger", { p_limit: limit });
   if (error) fail(error);

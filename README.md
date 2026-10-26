@@ -26,6 +26,7 @@ tests/                 end-to-end rules test that runs on plain Postgres
 | Football only | `0017` | every other sport's data, markets and code paths removed; football's card is all that is left |
 | Explainers, history | `0018` | one plain-English line per call; `call_label()`, `my_history()` |
 | Point economy | `0019` | `profiles.balance`, the append-only `ledger`, stakes on calls, multipliers, rewarded ads, `prize_claims` |
+| The jackpot | `0020` | stakes from 1 point; a call nobody lands rolls its losses forward, less a 10% rake |
 | Sync | `sync/espn-sync.mjs` | systemd timer, every minute: fixtures a week out (every 30 min), live scoreboards, goals and cards for matches being played, squads for the board, then settlement |
 | Mail | `send-notifications` | drains the queue through Resend |
 
@@ -97,7 +98,7 @@ The red card takes an optional 15-minute window for a far bigger multiplier. Rul
 
 ## Points are a currency (§4, `0019`)
 
-Everyone starts with **1,000 points**. Every call carries a stake the player picks — **10, 25, 50, 100 or 200** — and the stake leaves the balance when the card **locks at kick-off**, not when it is saved. At settlement a call that lands returns `stake × multiplier`, a call that misses returns nothing, and a void call hands the stake back.
+Everyone starts with **1,000 points**. Every call carries a stake the player picks — **1, 2, 5, 10, 25 or 50** — and the stake leaves the balance when the card **locks at kick-off**, not when it is saved. At settlement a call that lands returns `stake × multiplier`, a call that misses returns nothing, and a void call hands the stake back.
 
 | Call | Multiplier |
 |---|---|
@@ -112,6 +113,20 @@ Everyone starts with **1,000 points**. Every call carries a stake the player pic
 | A red card | 10×, or 35×–120× with a 15-minute window |
 
 A card cannot stake more than the player holds, counting what other open cards have already promised; the check is in `rpc_save_calls`. If a balance somehow falls short by kick-off the entry is not staked at all and its calls settle void.
+
+**The jackpot (`0020`).** Where nobody lands a call type on a card, the stakes actually lost on it
+— a refunded void never counts — are pooled, the house takes a **10% rake**, and the rest becomes a
+jackpot held per competition per call type. The next card in that competition shows
+`Jackpot: +N points` on the call while it is open, and the first card where somebody does land it
+shares the jackpot among the winners in proportion to what they staked, on top of their multiplier
+payout. Nobody lands it again and that card's pot is added, so it compounds. Shares are floored and
+the rounding remainder stays in the pot rather than being invented.
+
+A card's part in the jackpot is **decided once**, the first time it settles final, and recorded in
+`jackpot_moves` — zero movements included. That matters: a jackpot is a sequence across cards in
+time, so without it a card re-settled after a provider correction would be judged against today's
+jackpot and could scoop a pot a *later* card had rolled in. A correction still re-scores the card
+and adjusts the multiplier payouts through the ledger; it never moves the jackpot.
 
 **The ledger.** Every movement is one row in `pool.ledger` (`user_id`, signed `amount`, `reason`, `reference`), written only by `SECURITY DEFINER` functions; a trigger refuses any update or delete, and no role has a write grant on it or on `profiles.balance`. `apply_ledger()` is idempotent per `(reason, reference)` — it writes the difference between what a reason has already paid and what it should have — so a provider correction adjusts a balance instead of paying twice. The running sum of a player's rows is always their balance; the tests assert it.
 
@@ -143,6 +158,7 @@ bash tests/run.sh      # rebuilds the db from every migration, then runs the tes
 ```
 `tests/game_test.sql` walks a full card: crew creation, RLS, filling, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
 `tests/football_test.sql` covers the rest of the card: the 3-way result, the goals line, the handicap, pushes, the red card's time window, non-runners and withdrawn cards.
+`tests/jackpot_test.sql` covers the rollover: the rake, the compounding, a void never feeding the pot, one competition's jackpot staying out of another's, a single winner taking it all, several winners splitting it by stake with the remainder carried, and settling twice moving nothing.
 `tests/economy_test.sql` covers the money: the starting 1,000, a stake deducted at lock, a payout on a hit, a loss on a miss, a refund on a void, the balance handed back when a match is called off, a correction adjusting rather than double-paying, the ten-a-day ad cap, the prize claim, and the grants that stop a client touching any of it.
 
 ## Not in v1 (by design)

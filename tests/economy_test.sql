@@ -8,7 +8,8 @@ set search_path = pool, public;
 insert into auth.users (id, email) values
   ('11111111-aaaa-0000-0000-000000000001', 'ana@example.com'),
   ('22222222-bbbb-0000-0000-000000000002', 'ben@example.com'),
-  ('33333333-cccc-0000-0000-000000000003', 'cem@example.com');
+  ('33333333-cccc-0000-0000-000000000003', 'cem@example.com'),
+  ('44444444-dddd-0000-0000-000000000004', 'dee@example.com');
 update profiles set display_name = initcap(split_part(email, '@', 1));
 
 create or replace function test_as(u text) returns void language sql as $$
@@ -75,9 +76,9 @@ insert into matches (id, competition_code, sport, season, utc_date, status, home
 do $$ begin
   assert bal('11111111-aaaa-0000-0000-000000000001') = 1000, 'Ana starts on 1,000';
   assert bal('22222222-bbbb-0000-0000-000000000002') = 1000, 'Ben starts on 1,000';
-  assert (select count(*) from ledger where reason = 'signup') = 3, 'one signup row each';
+  assert (select count(*) from ledger where reason = 'signup') = 4, 'one signup row each';
   assert ledger_sum('11111111-aaaa-0000-0000-000000000001') = 1000, 'the ledger is the balance';
-  assert (select array_agg(amount order by amount) from stakes) = array[10, 25, 50, 100, 200], 'the five stakes';
+  assert (select array_agg(amount order by amount) from stakes) = array[1, 2, 5, 10, 25, 50], 'the six stakes';
 end $$;
 
 -- --- 2. the multipliers the design asks for ----------------------------------------------------
@@ -95,52 +96,58 @@ end $$;
 -- --- 3. a stake is one of five, and it is locked onto the call when it is saved -----------------
 do $$ begin
   assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
-    '[{"call_type":"winner","team_id":9001,"stake":30}]', '%10, 25, 50, 100 or 200%'), 'an invented stake';
+    '[{"call_type":"winner","team_id":9001,"stake":30}]', '%1, 2, 5, 10, 25 or 50%'), 'an invented stake';
   assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
-    '[{"call_type":"winner","team_id":9001,"stake":500}]', '%10, 25, 50, 100 or 200%'), 'above the top stake';
+    '[{"call_type":"winner","team_id":9001,"stake":100}]', '%1, 2, 5, 10, 25 or 50%'), 'above the top stake';
 end $$;
 
--- Ana's card: the result at 100, the scoreline at 25, over the goals line at 50, a scorer at 10.
+-- Ana's card: the result at 50, the scoreline at 25, over the goals line at 25, a scorer at 10.
 select play(:'A', 9000, '[
-  {"call_type":"winner","team_id":9001,"stake":100},
+  {"call_type":"winner","team_id":9001,"stake":50},
   {"call_type":"score","home_goals":2,"away_goals":1,"stake":25},
-  {"call_type":"total","yes":true,"stake":50},
+  {"call_type":"total","yes":true,"stake":25},
   {"call_type":"scorer","player_id":90012,"stake":10}
 ]') as ana_card \gset
 do $$ begin
-  assert (select count(*) from calls where stake not in (10, 25, 50, 100, 200)) = 0, 'every stake is legal';
+  assert (select count(*) from calls where stake not in (1, 2, 5, 10, 25, 50)) = 0, 'every stake is legal';
   assert (select multiplier from calls where call_type = 'winner') = 1.5, 'the result at 1.5';
   assert (select multiplier from calls where call_type = 'score')  = 8, 'the scoreline at 8';
   -- nothing has moved yet: the stake leaves the balance at kick-off, not at save
   assert bal('11111111-aaaa-0000-0000-000000000001') = 1000, 'saving costs nothing';
   assert (select count(*) from ledger where reason = 'stake') = 0, 'no stake rows before kick-off';
-  assert committed_stake('11111111-aaaa-0000-0000-000000000001') = 185, 'but 185 is promised';
+  assert committed_stake('11111111-aaaa-0000-0000-000000000001') = 110, 'but 110 is promised';
 end $$;
 
 -- --- 4. you cannot promise more than you hold --------------------------------------------------
+do $$ declare dee text := '44444444-dddd-0000-0000-000000000004'; begin
+  -- drain Dee to 40 points, then watch her try to stake 75 across two open cards
+  perform apply_ledger(dee::uuid, 'ad_reward', 'test-drain', -960);
+  assert bal(dee) = 40, 'Dee is down to 40';
+  perform play(dee, 9100, '[{"call_type":"winner","team_id":9001,"stake":25}]');
+  assert rejects(dee, 9200, '[{"call_type":"scorer","player_id":90011,"stake":50}]',
+    '%Not enough points%'), 'the second card would take her past 40';
+  -- within what is left, it goes through
+  perform play(dee, 9200, '[{"call_type":"scorer","player_id":90011,"stake":10}]');
+  assert committed_stake(dee::uuid) = 35, 'both open cards count against the one balance';
+end $$;
+
+-- Ana puts a card on 9100 too
+select play(:'A', 9100, '[{"call_type":"winner","team_id":9001,"stake":50}]');
 do $$ begin
-  -- Ana has 1,000 and 185 promised; four more calls at 200 would be 800, over the 815 left… just.
-  assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
-    '[{"call_type":"winner","team_id":9001,"stake":200},{"call_type":"score","home_goals":1,"away_goals":0,"stake":200},
-      {"call_type":"scorer","player_id":90011,"stake":200},{"call_type":"assist","player_id":90012,"stake":200},
-      {"call_type":"yellow","player_id":90021,"stake":200}]',
-    '%Not enough points%'), 'over the balance across open cards';
-  -- and within the limit it goes through
-  perform play('11111111-aaaa-0000-0000-000000000001', 9100, '[{"call_type":"winner","team_id":9001,"stake":200}]');
-  assert committed_stake('11111111-aaaa-0000-0000-000000000001') = 385, 'both open cards count';
+  assert committed_stake('11111111-aaaa-0000-0000-000000000001') = 160, 'both of Ana''s open cards count';
 end $$;
 
 -- --- 5. the stake is deducted when the card locks at kick-off ----------------------------------
 select kickoff(9000);
 do $$ begin
   assert (select status from cards where match_id = 9000) = 'locked', 'the card locked';
-  assert bal('11111111-aaaa-0000-0000-000000000001') = 1000 - 185, format('185 left the balance: %s', bal('11111111-aaaa-0000-0000-000000000001'));
-  assert (select count(*) from ledger where reason = 'stake') = 4, 'one stake row per call';
-  assert (select sum(amount) from ledger where reason = 'stake') = -185, 'and they sum to the card';
+  assert bal('11111111-aaaa-0000-0000-000000000001') = 1000 - 110, format('110 left the balance: %s', bal('11111111-aaaa-0000-0000-000000000001'));
+  assert (select count(*) from ledger where reason = 'stake' and user_id = '11111111-aaaa-0000-0000-000000000001') = 4, 'one stake row per call';
+  assert (select sum(amount) from ledger where reason = 'stake' and user_id = '11111111-aaaa-0000-0000-000000000001') = -110, 'and they sum to the card';
   assert (select bool_and(staked) from calls k join entries e on e.id = k.entry_id where e.card_id = (select id from cards where match_id = 9000)), 'every call is staked';
   assert ledger_sum('11111111-aaaa-0000-0000-000000000001') = bal('11111111-aaaa-0000-0000-000000000001'), 'the ledger still is the balance';
   -- the promise on the locked card is spent, the one on the open card is not
-  assert committed_stake('11111111-aaaa-0000-0000-000000000001') = 200, 'only the open card is still promised';
+  assert committed_stake('11111111-aaaa-0000-0000-000000000001') = 50, 'only the open card is still promised';
 end $$;
 
 -- --- 6. settlement: a hit pays stake × multiplier, a miss loses it, a push gives it back --------
@@ -155,64 +162,77 @@ do $$ declare b int := bal('11111111-aaaa-0000-0000-000000000001'); begin
   assert res('11111111-aaaa-0000-0000-000000000001', 9000, 'score')  = 'hit',  'the scoreline landed';
   assert res('11111111-aaaa-0000-0000-000000000001', 9000, 'total')  = 'void', 'three goals on a line of 3 is a push';
   assert res('11111111-aaaa-0000-0000-000000000001', 9000, 'scorer') = 'miss', 'Pires did not score';
-  -- 100 × 1.5 = 150 won, 25 × 8 = 200 won, 50 refunded, 10 lost
+  -- 50 × 1.5 = 75 won, 25 × 8 = 200 won, 25 refunded, 10 lost
   assert (select points_awarded from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
-          where c.match_id = 9000 and k.call_type = 'winner') = 150, 'the result paid 150';
+          where c.match_id = 9000 and k.call_type = 'winner') = 75, 'the result paid 75';
   assert (select points_awarded from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
           where c.match_id = 9000 and k.call_type = 'score') = 200, 'the scoreline paid 200';
-  assert (select count(*) from ledger where reason = 'win') = 2, 'two winnings';
-  assert (select amount from ledger where reason = 'refund') = 50, 'the push was handed back';
-  assert b = 1000 - 185 + 150 + 200 + 50, format('balance after the card: %s', b);
-  assert b = 1215, format('balance is 1215, not %s', b);
+  assert (select count(*) from ledger where reason = 'win' and user_id = '11111111-aaaa-0000-0000-000000000001') = 2, 'two winnings';
+  assert (select amount from ledger where reason = 'refund' and user_id = '11111111-aaaa-0000-0000-000000000001') = 25, 'the push was handed back';
+  assert b = 1000 - 110 + 75 + 200 + 25, format('balance after the card: %s', b);
+  assert b = 1190, format('balance is 1190, not %s', b);
   assert ledger_sum('11111111-aaaa-0000-0000-000000000001') = b, 'the ledger is the balance';
-  -- the card''s own number is the net effect on the balance
-  assert pts('11111111-aaaa-0000-0000-000000000001', 9000) = 215, format('the card is worth +215, not %s', pts('11111111-aaaa-0000-0000-000000000001', 9000));
+  -- the card's own number is the net effect on the balance
+  assert pts('11111111-aaaa-0000-0000-000000000001', 9000) = 190, format('the card is worth +190, not %s', pts('11111111-aaaa-0000-0000-000000000001', 9000));
+  -- nobody landed the scorer, so its 10 rolls forward less the rake (0020)
+  assert jackpot_of('PL', 'scorer') = 9, format('the scorer jackpot is 9, not %s', jackpot_of('PL', 'scorer'));
+  assert jackpot_of('PL', 'total') = 0, 'a refunded push was never lost, so nothing rolls';
 end $$;
 
 -- --- 7. losing: every call wrong takes every stake ---------------------------------------------
 select kickoff(9100);
-do $$ begin assert bal('11111111-aaaa-0000-0000-000000000001') = 1215 - 200, 'the second card''s stake went too'; end $$;
+do $$ begin assert bal('11111111-aaaa-0000-0000-000000000001') = 1190 - 50, 'the second card''s stake went too'; end $$;
 select finish(9100, 0, 2);
 do $$ begin
   assert res('11111111-aaaa-0000-0000-000000000001', 9100, 'winner') = 'miss', 'Rovers lost';
-  assert bal('11111111-aaaa-0000-0000-000000000001') = 1015, format('a wrong call returns nothing: %s', bal('11111111-aaaa-0000-0000-000000000001'));
-  assert pts('11111111-aaaa-0000-0000-000000000001', 9100) = -200, 'the card cost 200';
-  assert (select count(*) from ledger where user_id = '11111111-aaaa-0000-0000-000000000001' and reason = 'win' and reference =
+  assert bal('11111111-aaaa-0000-0000-000000000001') = 1140, format('a wrong call returns nothing: %s', bal('11111111-aaaa-0000-0000-000000000001'));
+  assert pts('11111111-aaaa-0000-0000-000000000001', 9100) = -50, 'the card cost 50';
+  assert (select count(*) from ledger where user_id = '11111111-aaaa-0000-0000-000000000001' and reason = 'win' and reference in
           (select k.id::text from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id where c.match_id = 9100)) = 0,
          'nothing was credited for it';
+  -- Ana's 50 and Dee's 25 both missed the result: 75 lost, rake 8, 67 rolls
+  assert jackpot_of('PL', 'winner') = 67, format('the result jackpot is 67, not %s', jackpot_of('PL', 'winner'));
 end $$;
 
--- --- 8. void: a player who never came on gets the stake back -----------------------------------
-select play(:'B', 9200, '[{"call_type":"scorer","player_id":90012,"stake":100},{"call_type":"winner","team_id":9001,"stake":50}]');
+-- --- 8. void: a player who never came on gets the stake back, and a winner takes the jackpot ----
+select play(:'B', 9200, '[{"call_type":"scorer","player_id":90012,"stake":50},{"call_type":"winner","team_id":9001,"stake":25}]');
 select kickoff(9200);
-do $$ begin assert bal('22222222-bbbb-0000-0000-000000000002') = 850, 'Ben staked 150'; end $$;
+do $$ begin assert bal('22222222-bbbb-0000-0000-000000000002') = 925, 'Ben staked 75'; end $$;
 insert into player_stats values (9200, 90011, 'app', 1), (9200, 90021, 'app', 1);   -- Pires was an unused sub
 select finish(9200, 1, 0);
 do $$ begin
   assert res('22222222-bbbb-0000-0000-000000000002', 9200, 'scorer') = 'void', 'an unused sub voids the call';
   assert res('22222222-bbbb-0000-0000-000000000002', 9200, 'winner') = 'hit', 'Rovers won';
-  -- 100 back, and 50 × 1.5 = 75 on the result
-  assert bal('22222222-bbbb-0000-0000-000000000002') = 850 + 100 + 75, format('Ben is on %s', bal('22222222-bbbb-0000-0000-000000000002'));
-  assert pts('22222222-bbbb-0000-0000-000000000002', 9200) = 25, 'net +25: the void is neither won nor lost';
+  -- 50 back, 25 × 1.5 = 38 on the result, and the 67 result jackpot is his alone
+  assert (select coalesce(sum(amount),0) from ledger where user_id = '22222222-bbbb-0000-0000-000000000002' and reason = 'jackpot') = 67, 'Ben took the result jackpot';
+  assert jackpot_of('PL', 'winner') = 0, 'and it is spent';
+  assert bal('22222222-bbbb-0000-0000-000000000002') = 925 + 50 + 38 + 67, format('Ben is on %s', bal('22222222-bbbb-0000-0000-000000000002'));
+  assert pts('22222222-bbbb-0000-0000-000000000002', 9200) = 38 + 50 + 67 - 75, format('Ben''s card is worth %s', pts('22222222-bbbb-0000-0000-000000000002', 9200));
+  -- Dee's scorer missed here, so the scorer jackpot grows: 9 + (10 - 1)
+  assert jackpot_of('PL', 'scorer') = 18, format('the scorer jackpot is 18, not %s', jackpot_of('PL', 'scorer'));
 end $$;
 
 -- --- 9. a provider correction adjusts the balance rather than paying twice ----------------------
 do $$ declare before int := bal('22222222-bbbb-0000-0000-000000000002'); begin
   perform process_match_updates(); perform process_match_updates();
   assert bal('22222222-bbbb-0000-0000-000000000002') = before, 'settling again changes nothing';
-  -- the goal is withdrawn: Rovers 0–0, so the result misses and the 75 comes back off
+  -- the goal is withdrawn: Rovers 0–0, so the result misses and the 38 comes back off
   delete from match_events where match_id = 9200;
   update matches set home_score = 0, ft_home = 0, provider_updated = now() + interval '1 second' where id = 9200;
   perform process_match_updates();
   assert res('22222222-bbbb-0000-0000-000000000002', 9200, 'winner') = 'miss', 'no goal, no win';
-  assert bal('22222222-bbbb-0000-0000-000000000002') = before - 75, format('the 75 was taken back: %s', bal('22222222-bbbb-0000-0000-000000000002'));
+  assert bal('22222222-bbbb-0000-0000-000000000002') = before - 38, format('the 38 was taken back: %s', bal('22222222-bbbb-0000-0000-000000000002'));
   assert ledger_sum('22222222-bbbb-0000-0000-000000000002') = bal('22222222-bbbb-0000-0000-000000000002'), 'and the ledger agrees';
+  -- the jackpot was decided when the card first settled and is not rewritten by a correction:
+  -- a later card may already have been paid from it (0020)
+  assert (select coalesce(sum(amount),0) from ledger where user_id = '22222222-bbbb-0000-0000-000000000002' and reason = 'jackpot') = 67, 'the jackpot share stands';
+  assert jackpot_of('PL', 'winner') = 0, 'and the pot was not re-rolled';
 end $$;
 
 -- --- 10. a match called off before it starts hands the stakes back ------------------------------
-select play(:'C', 9300, '[{"call_type":"winner","team_id":9001,"stake":200}]');
+select play(:'C', 9300, '[{"call_type":"winner","team_id":9001,"stake":50}]');
 select kickoff(9300);
-do $$ begin assert bal('33333333-cccc-0000-0000-000000000003') = 800, 'staked at kick-off'; end $$;
+do $$ begin assert bal('33333333-cccc-0000-0000-000000000003') = 950, 'staked at kick-off'; end $$;
 update matches set utc_date = now() + interval '2 days', status = 'POSTPONED' where id = 9300;
 select sync_card_status();
 do $$ begin

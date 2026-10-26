@@ -97,15 +97,15 @@ select test_as('11111111-1111-1111-1111-111111111111');
 select rpc_save_calls(:'card_id', '[
   {"call_type":"winner","team_id":57,"stake":50},
   {"call_type":"score","home_goals":2,"away_goals":1,"stake":25},
-  {"call_type":"scorer","player_id":2,"stake":100},
-  {"call_type":"assist","player_id":3,"stake":50},
-  {"call_type":"yellow","player_id":7,"stake":25},
-  {"call_type":"red","player_id":8,"stake":10}
+  {"call_type":"scorer","player_id":2,"stake":50},
+  {"call_type":"assist","player_id":3,"stake":25},
+  {"call_type":"yellow","player_id":7,"stake":10},
+  {"call_type":"red","player_id":8,"stake":5}
 ]') as mina_entry \gset
 insert into t_ids values ('mina_entry', :'mina_entry');
 do $$ begin
   assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 1000, 'saving a card costs nothing yet';
-  assert my_committed_stake() = 260, 'but 260 is promised to it';
+  assert my_committed_stake() = 165, 'but 165 is promised to it';
 end $$;
 
 -- validation: simple card rejects complex calls, wrong squad rejected, motm disabled
@@ -125,23 +125,34 @@ end $$;
 -- a second card the same matchday: both are promised against the one balance
 select rpc_save_calls(:'card2_id', '[{"call_type":"scorer","player_id":5,"stake":25}]');
 do $$ begin
-  assert my_committed_stake() = 285, 'both open cards count against the balance';
+  assert my_committed_stake() = 190, 'both open cards count against the balance';
+end $$;
+select test_reset();
+
+-- a thin balance refuses a stake it cannot cover
+do $$ declare pub uuid := (select id from cards where match_id = 1000 and crew_id is null);
+begin
+  perform apply_ledger('33333333-3333-3333-3333-333333333333', 'ad_reward', 'test-drain', -995);
+  perform test_as('33333333-3333-3333-3333-333333333333');
+  assert (select balance from profiles where id = '33333333-3333-3333-3333-333333333333') = 5, 'Celine is down to 5';
   begin
-    perform rpc_save_calls(tv('card2_id')::uuid, '[{"call_type":"scorer","player_id":5,"stake":200},
-      {"call_type":"assist","player_id":5,"stake":200},{"call_type":"yellow","player_id":5,"stake":200},
-      {"call_type":"red","player_id":5,"stake":200}]');
+    perform rpc_save_calls(pub, '[{"call_type":"winner","team_id":57,"stake":50}]');
     raise exception 'a card was staked past the balance';
   exception when others then if sqlerrm not like '%Not enough points%' then raise; end if; end;
-  assert my_committed_stake() = 285, 'and the refused card changed nothing';
+  perform test_reset();
+  perform apply_ledger('33333333-3333-3333-3333-333333333333', 'ad_reward', 'test-drain', 0);
+  assert (select balance from profiles where id = '33333333-3333-3333-3333-333333333333') = 1000, 'and she is restored';
+  assert (select count(*) from entries e join cards c on c.id = e.card_id where c.match_id = 1000 and e.user_id = '33333333-3333-3333-3333-333333333333') = 0, 'the refused card left nothing behind';
 end $$;
+select test_as('11111111-1111-1111-1111-111111111111');
 select test_reset();
 
 -- --- Tobias fills the same card: the draw at 3×, and two player calls --------------
 select test_as('22222222-2222-2222-2222-222222222222');
 select rpc_save_calls(:'card_id', '[
-  {"call_type":"winner","pick":"draw","stake":100},
-  {"call_type":"scorer","player_id":5,"stake":50},
-  {"call_type":"yellow","player_id":7,"stake":25}
+  {"call_type":"winner","pick":"draw","stake":50},
+  {"call_type":"scorer","player_id":5,"stake":25},
+  {"call_type":"yellow","player_id":7,"stake":10}
 ]');
 -- before lock Tobias cannot see Mina's calls, nor her entry row, but can see she is playing
 do $$ begin
@@ -163,9 +174,9 @@ update matches set utc_date = now() - interval '1 minute' where id = 1000;
 select sync_card_status();
 do $$ begin
   assert (select status from cards where id = tv('card_id')::uuid) = 'locked', 'locked at kickoff';
-  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 1000 - 260, 'Mina staked 260';
-  assert (select balance from profiles where id = '22222222-2222-2222-2222-222222222222') = 1000 - 175, 'Tobias staked 175';
-  assert (select coalesce(sum(amount), 0) from ledger where reason = 'stake') = -435, 'the ledger holds both';
+  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 1000 - 165, 'Mina staked 165';
+  assert (select balance from profiles where id = '22222222-2222-2222-2222-222222222222') = 1000 - 85, 'Tobias staked 85';
+  assert (select coalesce(sum(amount), 0) from ledger where reason = 'stake') = -250, 'the ledger holds both';
   perform test_as('11111111-1111-1111-1111-111111111111');
   begin perform rpc_save_calls(tv('card_id')::uuid, '[]'); raise exception 'edit after lock';
   exception when others then if sqlerrm not like '%locked%' then raise; end if; end;
@@ -192,8 +203,8 @@ do $$ declare e uuid := tv('mina_entry')::uuid; begin
   -- §3 progressive settlement: result calls stay open at 1–1 in the 67th minute
   assert (select result from calls where entry_id = e and call_type = 'winner') = 'pending', 'live: winner open';
   assert (select result from calls where entry_id = e and call_type = 'score') = 'pending', 'live: score open';
-  -- scorer 100 × 4, assist 50 × 6, yellow 25 × 3, less the 260 staked
-  assert (select points from entries where id = e) = 400 + 300 + 75 - 260, format('live net %s', (select points from entries where id = e));
+  -- scorer 50 × 4, assist 25 × 6, yellow 10 × 3, less the 165 staked
+  assert (select points from entries where id = e) = 200 + 150 + 30 - 165, format('live net %s', (select points from entries where id = e));
 end $$;
 
 -- --- full time 2–1: Saka 90+3 (counts), Konaté red 90+5 (counts), ET goal ignored --------------
@@ -208,15 +219,17 @@ select process_match_updates();
 do $$ declare e uuid := tv('mina_entry')::uuid; t uuid; begin
   select id into t from entries where card_id = tv('card_id')::uuid and user_id = '22222222-2222-2222-2222-222222222222';
   assert (select status from cards where id = tv('card_id')::uuid) = 'settled', 'card settled';
-  -- Mina: result 50×1.5 + scoreline 25×8 + scorer 100×4 + assist 50×6 + yellow 25×3 + red 10×10 = 1150 back on 260 staked
-  assert (select points from entries where id = e) = 1150 - 260, format('Mina points %s', (select points from entries where id = e));
+  -- Mina: result 50×1.5 + scoreline 25×8 + scorer 50×4 + assist 25×6 + yellow 10×3 + red 5×10 = 705 back on 165 staked
+  assert (select points from entries where id = e) = 705 - 165, format('Mina points %s', (select points from entries where id = e));
   assert (select hits from entries where id = e) = 6, 'Mina 6 of 6';
-  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 1000 - 260 + 1150, 'Mina is paid';
-  -- Tobias: the draw loses its 100, Salah pays 50×4, the yellow 25×3 — 275 back on 175 staked
-  assert (select points from entries where id = t) = 275 - 175, format('Tobias points %s', (select points from entries where id = t));
+  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 1000 - 165 + 705, 'Mina is paid';
+  -- Tobias: the draw loses its 50, Salah pays 25×4, the yellow 10×3 — 130 back on 85 staked
+  assert (select points from entries where id = t) = 130 - 85, format('Tobias points %s', (select points from entries where id = t));
   assert (select result from calls where entry_id = t and call_type = 'winner') = 'miss', 'a wrong call is a wrong call';
   assert (select points_awarded from calls where entry_id = t and call_type = 'winner') = 0, 'and returns nothing';
-  assert (select balance from profiles where id = '22222222-2222-2222-2222-222222222222') = 1000 - 175 + 275, 'Tobias is paid';
+  assert (select balance from profiles where id = '22222222-2222-2222-2222-222222222222') = 1000 - 85 + 130, 'Tobias is paid';
+  -- somebody landed every call on this card, so nothing rolled forward
+  assert (select coalesce(sum(amount), 0) from jackpots) = 0, 'no jackpot from a card where everything landed';
   -- ET goal did not count against anything
   assert (select count(*) from match_events where match_id = 1000 and not counts) = 1, 'ET event excluded';
   -- stickers: one per (competition, season, call type)
@@ -234,7 +247,7 @@ end $$;
 -- --- the result is 3-way: a draw beats a side ------------------------------------------
 -- settle match 1001 as 0–0: Tobias has no entry; Mina's scorer call misses, and we add a winner call for a third user
 select test_as('11111111-1111-1111-1111-111111111111');
-select rpc_save_calls(:'card2_id', '[{"call_type":"scorer","player_id":5,"stake":25},{"call_type":"winner","team_id":64,"stake":50}]') ;
+select rpc_save_calls(:'card2_id', '[{"call_type":"scorer","player_id":5,"stake":25},{"call_type":"winner","team_id":64,"stake":50}]');
 select test_reset();
 update matches set utc_date = now() - interval '3 hours' where id = 1001;
 update matches set status = 'FINISHED', home_score = 0, away_score = 0, ft_home = 0, ft_away = 0, provider_updated = now() where id = 1001;
@@ -242,6 +255,9 @@ select process_match_updates();
 do $$ begin
   assert (select result from calls c join entries e on e.id = c.entry_id where e.card_id = tv('card2_id')::uuid and call_type = 'winner') = 'miss', 'a side loses to a draw';
   assert (select points from entries where card_id = tv('card2_id')::uuid) = -75, 'a blank card costs what it staked';
+  -- and a blank card is exactly what feeds the jackpot: 50 and 25 lost, less the 10% rake
+  assert jackpot_of('PL', 'winner') = 45, format('the result jackpot is 45, not %s', jackpot_of('PL', 'winner'));
+  assert jackpot_of('PL', 'scorer') = 22, format('the scorer jackpot is 22, not %s', jackpot_of('PL', 'scorer'));
   -- streak: same matchday, Mina landed on the other card that day → still 1
   assert (select streak from profiles where id = '11111111-1111-1111-1111-111111111111') = 1, 'streak survives';
 end $$;
@@ -252,9 +268,14 @@ update matches set provider_updated = now() + interval '1 second' where id = 100
 select process_match_updates();
 do $$ declare e uuid := tv('mina_entry')::uuid; begin
   assert (select result from calls where entry_id = e and call_type = 'assist') = 'miss', 'correction: assist now missed';
-  assert (select points from entries where id = e) = 1150 - 300 - 260, format('corrected points %s', (select points from entries where id = e));
-  -- the 300 is taken back off the balance, not paid again
-  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 1000 - 260 + 1150 - 75 - 300, 'the correction adjusts the balance';
+  assert (select points from entries where id = e) = 705 - 150 - 165, format('corrected points %s', (select points from entries where id = e));
+  -- the 150 is taken back off the balance, not paid again
+  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 1000 - 165 + 705 - 75 - 150, 'the correction adjusts the balance';
+  -- the jackpot is not rewritten by a correction: this card was decided when it first settled,
+  -- and a later card has already rolled pots in since (0020)
+  assert jackpot_of('PL', 'assist') = 0, format('the assist pot is not re-decided, got %s', jackpot_of('PL', 'assist'));
+  assert jackpot_of('PL', 'winner') = 45, 'and the standing jackpots are untouched by it';
+  assert jackpot_of('PL', 'scorer') = 22, 'likewise the scorer';
   assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111')
        = (select sum(amount) from ledger where user_id = '11111111-1111-1111-1111-111111111111'), 'the ledger is the balance';
   assert (select status from cards where id = tv('card_id')::uuid) = 'settled', 'disputed → settled';
@@ -279,12 +300,12 @@ do $$ begin
   perform test_as('11111111-1111-1111-1111-111111111111');
   -- the overall table is a rich list now
   assert (select display_name from leaderboard('overall') limit 1) = 'Mina', 'the richest leads';
-  assert (select balance from leaderboard('overall') limit 1) = 1515, 'and the table shows the balance';
-  assert (select points from leaderboard('overall') limit 1) = 890 - 300 - 75, 'with what the settled cards were worth';
+  assert (select balance from leaderboard('overall') limit 1) = 1315, 'and the table shows the balance';
+  assert (select points from leaderboard('overall') limit 1) = 540 - 150 - 75, 'with what the settled cards were worth';
   assert (select display_name from leaderboard('crew', tv('crew_id')) limit 1) = 'Mina', 'crew table';
   assert (my_stats()->>'rank')::int = 1, 'my rank';
-  assert (my_stats()->>'balance')::int = 1515, 'my balance';
-  assert crew_score(tv('crew_id')::uuid) = 590 + 100 - 75, format('crew score %s', crew_score(tv('crew_id')::uuid));
+  assert (my_stats()->>'balance')::int = 1315, 'my balance';
+  assert crew_score(tv('crew_id')::uuid) = 390 + 45 - 75, format('crew score %s', crew_score(tv('crew_id')::uuid));
   perform test_reset();
 end $$;
 

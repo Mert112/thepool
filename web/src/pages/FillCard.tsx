@@ -12,7 +12,7 @@
 // what the database kept, so "I filled it in" and "it says No pick" can never disagree again.
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getCard, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, myCommittedStake, saveCalls, STAKES,
+import { getCard, getCrowd, getJackpots, getMarkets, getMatch, getMyEntry, getSquads, myCommittedStake, saveCalls, STAKES,
   type Call, type CallType, type Market, type Player } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, soon } from "../lib/format";
@@ -44,12 +44,13 @@ export default function FillCard() {
     if (!card) throw new Error("This card does not exist or is not yours to see.");
     const match = await getMatch(card.match_id);
     if (!match) throw new Error("Fixture missing.");
-    const [markets, entry, crowd, squads, committed] = await Promise.all([
-      getMarkets(), getMyEntry(card.id, uid), getCrowd(card.id), getSquads(match.home_team_id, match.away_team_id), myCommittedStake(),
+    const [markets, entry, crowd, squads, committed, jackpots] = await Promise.all([
+      getMarkets(), getMyEntry(card.id, uid), getCrowd(card.id), getSquads(match.home_team_id, match.away_team_id),
+      myCommittedStake(), getJackpots(match.competition_code),
     ]);
     // committed counts this card too; the page works out what is left after this card's own stakes
     const mine = (entry?.calls ?? []).reduce((s, c) => s + (c.stake ?? 0), 0);
-    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entry, crowd, squads, elsewhere: committed - mine };
+    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entry, crowd, squads, jackpots, elsewhere: committed - mine };
   }, [id]);
 
   // hydrate from the saved entry
@@ -137,7 +138,7 @@ export default function FillCard() {
 
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorBox msg={error} />;
-  const { card, match, markets, crowd, squads } = data!;
+  const { card, match, markets, crowd, squads, jackpots } = data!;
   if (!match) return <Empty>Fixture missing.</Empty>;
   const teamName = (t: number) => nameOf(match, t);
   const playerName = playerNameOf(squads);
@@ -161,9 +162,10 @@ export default function FillCard() {
             {editable ? `Locks in ${countdown(match.utc_date, now)} · edit as often as you like until then` : "This card is locked."}
           </div>
           <div className="tiny muted" style={{ marginBottom: 16 }}>
-            Every call carries a stake. Nothing leaves your balance until kick-off; after that a call that
-            lands returns its stake times the multiplier, a call that misses loses the stake, and a void
-            call hands the stake back.
+            Every call carries a stake, from a single point. Nothing leaves your balance until kick-off;
+            after that a call that lands returns its stake times the multiplier, a call that misses loses
+            the stake, and a void call hands the stake back. Where nobody landed a call last time out, what
+            they lost is carried here as a jackpot and shared among whoever lands it now.
           </div>
 
           {err && <div className="banner bad" role="alert"><div><b>Not saved.</b> {err}</div></div>}
@@ -201,7 +203,15 @@ export default function FillCard() {
               <div key={k.call_type} className={"market" + (on ? " on" : "") + (dropped ? " dropped" : "")} style={{ "--i": i } as CSSProperties}>
                 {dropped && <div className="dropped-flag">Removed — it clashed with your “{titleOf(clash!.by)}” pick. Nothing here will be saved until you pick again.</div>}
                 <div className="head">
-                  <div><h3 className="display" style={{ margin: 0 }}>{k.title}</h3><div className="small muted explainer">{k.explainer}</div></div>
+                  <div>
+                    <h3 className="display" style={{ margin: 0 }}>{k.title}</h3>
+                    {editable && !!jackpots[k.call_type] && (
+                      <div className="jackpot" title="Nobody landed this call last time out. What they lost is carried here, and shared among whoever lands it now.">
+                        Jackpot: +{jackpots[k.call_type]!.toLocaleString()} points
+                      </div>
+                    )}
+                    <div className="small muted explainer">{k.explainer}</div>
+                  </div>
                   <div style={{ textAlign: "right" }}>
                     <div className="pts">{on ? fmtMult(multiplierOfCall(k, cur!)) : multiplierRange(k)}</div>
                     <div className="tiny muted">your stake back, times this</div>

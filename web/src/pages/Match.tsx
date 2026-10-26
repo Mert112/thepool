@@ -1,7 +1,7 @@
 // §5.3 The match page: everything about a card before you play it
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { getCardPlayers, getCardsForMatch, getCrowd, getMarkets, getMatch, getMyCrews, getMyEntry, type Card } from "../lib/api";
+import { getCardPlayers, getCardsForMatch, getCrowd, getJackpots, getMarkets, getMatch, getMyCrews, getMyEntry, type Card } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, plural, soon } from "../lib/format";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
@@ -23,14 +23,15 @@ export default function Match() {
   const { data, error, loading, reload } = useLoad(async () => {
     const [match, cards, crews] = await Promise.all([getMatch(matchId), getCardsForMatch(matchId), getMyCrews()]);
     const markets = match ? (await getMarkets()).filter((k) => offered(k, match)) : [];
+    const jackpots = match ? await getJackpots(match.competition_code) : {};
     const cardId = selected ?? cards.find((c) => c.crew_id === null)?.id ?? cards[0]?.id ?? null;
     const [players, crowd, mine] = cardId ? await Promise.all([getCardPlayers(cardId), getCrowd(cardId), getMyEntry(cardId, session!.user.id)]) : [[], [], null];
-    return { match, cards, crews, markets, cardId, players, crowd, mine };
+    return { match, cards, crews, markets, jackpots, cardId, players, crowd, mine };
   }, [matchId, selected]);
 
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorBox msg={error} />;
-  const { match, cards, crews, markets, cardId, players, crowd, mine } = data!;
+  const { match, cards, crews, markets, jackpots, cardId, players, crowd, mine } = data!;
   if (!match) return <Empty>Unknown fixture.</Empty>;
   const card: Card | undefined = cards.find((c) => c.id === cardId);
   const complex = card?.mode === "complex";
@@ -96,7 +97,11 @@ export default function Match() {
               const t = topCrowd(k.call_type);
               return (
                 <div key={k.call_type} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px minmax(0,1.2fr)", gap: 14, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--raise)" }}>
-                  <div><b>{k.title}</b><div className="tiny muted explainer">{k.explainer}</div></div>
+                  <div>
+                    <b>{k.title}</b>
+                    {upcoming && !!jackpots[k.call_type] && <div className="jackpot">Jackpot: +{jackpots[k.call_type]!.toLocaleString()} points</div>}
+                    <div className="tiny muted explainer">{k.explainer}</div>
+                  </div>
                   <div className="num lime" style={{ fontSize: 20, whiteSpace: "nowrap" }}>{multiplierRange(k)}</div>
                   <div className="small muted">{t ? <span>{t.pct}% · {t.label}</span> : <span className="faint">no calls yet</span>}</div>
                 </div>

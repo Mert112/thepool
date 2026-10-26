@@ -143,6 +143,42 @@ of the array is deleted.
 
 ---
 
+### 6. The jackpot, and stakes from a point
+
+`0020_jackpot_rollover.sql`.
+
+**Stakes are now 1, 2, 5, 10, 25, 50** — a point is a real unit and a card can be played for almost
+nothing. 100 and 200 are gone; no call on production used either.
+
+**A call nobody lands rolls its losses forward.** The multipliers are untouched: a correct call
+still returns `stake × multiplier`, minted. What changes is where the *losing* stakes go, which
+until now was nowhere.
+
+- The pot on a call type = the stakes **actually lost** on it. A refunded void never counts, and
+  nor does a winner's stake.
+- Nobody correct → the house takes a **10% rake** and the rest becomes a jackpot, held per
+  competition per call type.
+- The next card in that competition shows **"Jackpot: +N points"** on the call while it is open, on
+  the card itself and in the match page's list of calls.
+- The first card where somebody does land it shares the jackpot among the winners **in proportion
+  to what they staked**, on top of their multiplier payout. Shares are floored and the rounding
+  remainder stays in the pot rather than being invented.
+- Nobody lands it again and that card's pot is added, so it compounds.
+
+**A card's part in the jackpot is decided once**, the first time it settles final, and written to
+`jackpot_moves` — zero movements included. The zero rows are the point: a jackpot is a sequence
+across cards in time, and the first version of this let a card re-settled after a correction be
+judged against *today's* jackpot. The game test caught it — a card from before the jackpot existed
+reached forward and scooped 59 points a later card had rolled in. A correction still re-scores the
+card and adjusts the multiplier payouts through the ledger; it never moves the jackpot.
+
+`tests/jackpot_test.sql` is new: the rake, the compounding, a void never feeding the pot, one
+competition's jackpot staying out of another's, a single winner taking it all, two winners splitting
+67 across 60 staked as 11 and 55 with the odd point carried, and settling twice moving nothing. The
+other three suites were re-based on the new stakes and now assert the jackpot where it falls.
+
+---
+
 ## Decisions I made, and would like checked
 
 These were not spelled out in the brief. Each is easy to reverse.
@@ -153,37 +189,51 @@ These were not spelled out in the brief. Each is easy to reverse.
    want it back, it would most naturally become something you *buy* with points. `entries.
    boost_call_type` and `rpc_set_boost` are dropped.
 
-2. **"Winner on a draw" is a miss here, not a void.** The brief gives that as the example of a void.
+2. **The jackpot pays on top of the multiplier, rather than replacing it.** You picked this over
+   true pari-mutuel pots when I flagged that the deployed game had no pot and no rake to roll over.
+   It means a winning call is still paid `stake × multiplier` out of thin air, and the jackpot is a
+   second, separate prize funded by the losers. If you want the pot to *be* the payout — so that
+   what you win depends on how the crowd split rather than on a fixed number — that is the
+   pari-mutuel option and it retires the multipliers.
+
+3. **The rake is kept, not redistributed.** 10% of every rolled-over pot leaves the game. It is
+   recorded in `jackpot_moves` as its own row so the take is auditable, but nothing spends it yet.
+
+4. **A void never feeds the pot.** A push on the goals line, a player who never came on, an
+   abandoned match: the stake is handed back, so there is nothing lost to roll. Only real misses
+   fund a jackpot.
+
+5. **"Winner on a draw" is a miss here, not a void.** The brief gives that as the example of a void.
    But football's result market has been 3-way since `0014` — home, draw or away — and the brief's
    own multiplier list has a separate entry for the draw, which only makes sense on a 3-way market.
    So a team pick on a 0–0 loses its stake, and the draw pays 3×. Voids come from pushes (a total or
    handicap landing exactly on the line), a player who never took part, and abandoned matches. Say
    the word and I will split the result back into a 2-way winner plus a separate draw call.
 
-3. **Over/under kept, at 2×.** The goals line is not in the brief's multiplier list, but it is a
+6. **Over/under kept, at 2×.** The goals line is not in the brief's multiplier list, but it is a
    live football market with real calls already on it, and it is half of the simple card. I gave it
    2×, the same as the handicap. Removing it is a one-line `update markets set enabled = false`.
 
-4. **The red card's time window multiplies up to 120×.** The optional 15-minute window predates
+7. **The red card's time window multiplies up to 120×.** The optional 15-minute window predates
    this work (`0015`) and scaled the old price by 3.5–12. I kept the same shape against the new base
    of 10×, so a red in the first quarter-hour pays 120× and one in the last pays 35×. At a 200 stake
    that is 24,000 points. It is a genuinely rare call, but it is the one number that could make the
    million reachable quickly, and it is the number I would most expect you to want to change —
    `markets.option_mult` for `red`, no deploy needed.
 
-5. **Claiming the prize does not spend the balance.** The brief says the claim is for us to handle
+8. **Claiming the prize does not spend the balance.** The brief says the claim is for us to handle
    manually, so I left the points where they are and recorded `balance_at_claim` on the row. There
    is a `prize` ledger reason ready for when a claim is fulfilled.
 
-6. **The ad flag is on.** `app_flags.rewarded_ads = true`, so the stub is live. It is clearly
+9. **The ad flag is on.** `app_flags.rewarded_ads = true`, so the stub is live. It is clearly
    labelled "Advertisement · placeholder" and explains itself. Flip the row to hide it.
 
-7. **The economy starts now, and history is frozen.** Cards that locked under the old free-points
+10. **The economy starts now, and history is frozen.** Cards that locked under the old free-points
    model carry no stake, so re-scoring one would judge it by stakes nobody paid. `pool.economy`
    records when the migration ran; `score_call` and `process_match_updates` leave anything older
    alone. Existing settled cards keep their old points and nobody is charged retrospectively.
 
-8. **`matches.odds` stays, but no longer prices anything.** The decimal prices in it were the old
+11. **`matches.odds` stays, but no longer prices anything.** The decimal prices in it were the old
    scoring (`points = 10 × price`). That is gone. The column has to stay, because it also carries
    the goals line and the handicap the card is played against. The prices are now unused data.
 
