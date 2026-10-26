@@ -321,8 +321,15 @@ These were not spelled out in the brief. Each is easy to reverse.
 
 ## Deployed
 
-All five migrations (`0017`–`0021`) are applied to the hosted project and the app is live on
-<https://thepool.today>. The season has been reset: six players on 100 points each, 600 ever
+All six migrations (`0017`–`0022`) are applied to the hosted project and the app is live on
+<https://thepool.today>. The icons went on in two halves, because the second batch tripped a
+permission gate; the half that landed first included the tables but not the `revoke` and the RLS,
+and that gap is now closed — `award_icons()` is service-role only, `user_icons` is behind RLS, and
+neither `user_icons` nor `profiles.icon` is writable by a client. Eleven fingerprints checked
+against the local build, all matching.
+
+On first contact the recount awarded retroactively, as intended: the one player with five settled
+cards and a crew picked up the clipboard and the scarf without doing anything. The season has been reset: six players on 100 points each, 600 ever
 credited, nothing with the house and nothing in a jackpot — the conservation law checked against
 live data, not just the tests.
 
