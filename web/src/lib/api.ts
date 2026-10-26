@@ -176,10 +176,25 @@ export async function getFlag(key: string): Promise<boolean> {
 }
 
 // §4 the point economy — every balance movement happens inside one of these
-export async function watchAd(): Promise<{ credited: number; watched_today: number; left_today: number; balance: number }> {
-  const { data, error } = await supabase.rpc("rpc_watch_ad");
+// §ads Google's rewarded slot hands the page no token of its own, so the nonce is ours: minted
+// before the ad is asked for, spent when it is granted, never twice (0025).
+export type AdNonce = { nonce: string; reward: number; watched_today: number; left_today: number };
+export async function adNonce(): Promise<AdNonce> {
+  const { data, error } = await supabase.rpc("rpc_ad_nonce");
   if (error) fail(error);
-  return data as { credited: number; watched_today: number; left_today: number; balance: number };
+  return data as AdNonce;
+}
+export type AdCredit = { credited: number; watched_today: number; left_today: number; balance: number };
+export async function watchAd(nonce?: string | null): Promise<AdCredit> {
+  const { data, error } = await supabase.rpc("rpc_watch_ad", { p_nonce: nonce ?? null });
+  if (error) fail(error);
+  return data as AdCredit;
+}
+// the public half of a `config` row — the ad unit has to reach the browser, the rest does not
+export async function getConfig<T = any>(key: string): Promise<T | null> {
+  const { data, error } = await supabase.from("config").select("value").eq("key", key).maybeSingle();
+  if (error) fail(error);
+  return ((data as { value: T } | null)?.value ?? null) as T | null;
 }
 export async function claimPrize(): Promise<string> {
   const { data, error } = await supabase.rpc("rpc_claim_prize");
@@ -272,7 +287,8 @@ export async function leaderboard(scope: "overall" | "competition" | "crew" | "w
 }
 export type Stats = {
   balance: number; points: number; rank: number | null; players: number; cards: number; hit_rate: number; streak: number;
-  committed: number; ads_today: number; ads_left: number; ad_reward: number; ads_enabled: boolean; prize_target: number;
+  committed: number; ads_today: number; ads_left: number; ad_reward: number; ads_enabled: boolean;
+  ads_gam: boolean; prize_target: number;
   prize_claim: { id: string; status: "pending" | "approved" | "rejected" | "fulfilled"; created_at: string } | null;
   competitions: Array<{ code: string; name: string; points: number; rank: number }>;
 };

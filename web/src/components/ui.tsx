@@ -4,11 +4,13 @@ import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
 import { initials } from "../lib/format";
-import { getFlag, setDisplayName, setLanguage, watchAd } from "../lib/api";
+import { adNonce, getConfig, getFlag, setDisplayName, setLanguage, watchAd } from "../lib/api";
+import { consent } from "../lib/consent";
+import { showRewarded } from "../lib/rewarded";
 import { LANGS, dictFor, translateError, useI18n, type Lang } from "../i18n";
 
 export const AD_SECONDS = 30;
-export const AD_REWARD = 0.5;
+export const AD_REWARD = 0.2;
 
 // The ten icons, mirroring pool.icons so an avatar renders without waiting for a fetch. The
 // database is still the authority on who has earned what — this is only how they look.
@@ -144,28 +146,58 @@ function NamePrompt() {
   );
 }
 
-// §4 "Get points": a rewarded-video placeholder. The countdown has to run out before the reward
-// can be collected, and the reward itself — half a point, ten a day — is granted and capped by
-// the database, not here. Swap the panel below for a real provider's player; nothing else moves.
+// §4 / §ads "Get points".
+//
+// Two paths, one flag. With `gam_rewarded` off this is the thirty-second countdown that has
+// stood in since `0019`, kept for testing. With it on, the real thing: a nonce from the server
+// first, then Google Ad Manager's rewarded slot, and the credit only once Google says the ad
+// was watched to the end. No ad, no consent, no fill — nothing is credited, and the page says
+// so rather than pretending.
 export function AdModal({ onClose, onCredited, reward = AD_REWARD }: { onClose: () => void; onCredited: (balance: number) => void; reward?: number }) {
   const { t, fmt } = useI18n();
   const [left, setLeft] = useState(AD_SECONDS);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [done, setDone] = useState<{ credited: number; left_today: number } | null>(null);
+  const [gam, setGam] = useState<{ on: boolean; path: string } | null>(null);
 
   useEffect(() => {
-    if (done) return;
+    Promise.all([getFlag("gam_rewarded"), getConfig<{ ad_unit_path?: string }>("ads")])
+      .then(([on, cfg]) => setGam({ on, path: cfg?.ad_unit_path ?? "" }))
+      .catch(() => setGam({ on: false, path: "" }));
+  }, []);
+
+  // the stub's countdown; the real slot has its own
+  useEffect(() => {
+    if (done || gam?.on) return;
     const tm = setInterval(() => setLeft((n) => (n > 0 ? n - 1 : 0)), 1000);
     return () => clearInterval(tm);
-  }, [done]);
+  }, [done, gam?.on]);
 
+  const credit = async (nonce?: string) => {
+    const r = await watchAd(nonce);
+    setDone({ credited: r.credited, left_today: r.left_today });
+    onCredited(r.balance);
+  };
+
+  // the stub
   const collect = async () => {
     setBusy(true); setErr(null);
+    try { await credit(); } catch (e: any) { setErr(e.message ?? String(e)); }
+    setBusy(false);
+  };
+
+  // the real slot: nonce → ad → credit, and nothing is credited unless Google granted it
+  const play = async () => {
+    setBusy(true); setErr(null); setNote(null);
+    if (consent() !== "accepted") { setNote(t.ads.needConsent); setBusy(false); return; }
     try {
-      const r = await watchAd();
-      setDone({ credited: r.credited, left_today: r.left_today });
-      onCredited(r.balance);
+      const { nonce } = await adNonce();
+      const result = await showRewarded(gam!.path);
+      if (result === "granted") await credit(nonce);
+      else if (result === "unavailable") setNote(`${t.ads.noAd} ${t.ads.tryAgain}`);
+      else setNote(t.ads.watchToEnd);
     } catch (e: any) { setErr(e.message ?? String(e)); }
     setBusy(false);
   };
@@ -177,8 +209,20 @@ export function AdModal({ onClose, onCredited, reward = AD_REWARD }: { onClose: 
           <div className="banner ok" role="status"><b>{t.ad.credited(done.credited)}</b> {done.left_today > 0 ? t.ad.more(done.left_today) : t.ad.allDone}</div>
           <div className="row-of">
             <button className="btn big" onClick={onClose}>{t.common.done}</button>
-            {done.left_today > 0 && <button className="btn" onClick={() => { setDone(null); setLeft(AD_SECONDS); }}>{t.ad.another}</button>}
+            {done.left_today > 0 && <button className="btn" onClick={() => { setDone(null); setLeft(AD_SECONDS); setNote(null); }}>{t.ad.another}</button>}
           </div>
+        </div>
+      ) : gam?.on ? (
+        <div>
+          <div className="ad-stub">
+            <div className="eyebrow">{t.ad.label}</div>
+            <div className="small muted">{t.ads.watchToEnd}</div>
+          </div>
+          {note && <div className="banner warn" role="status"><div>{note}</div></div>}
+          <ErrorBox msg={err} />
+          <button className="btn big" disabled={busy} onClick={play}>
+            {busy ? t.ads.loading : t.ad.collect(reward)}
+          </button>
         </div>
       ) : (
         <div>

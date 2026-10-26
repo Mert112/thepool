@@ -256,6 +256,35 @@ name within its competition (accents, case and club-type noise ignored) before c
 one. 67 matches and 87 teams were claimed on the first pass; the 713 settled matches that predate
 the window keep their ESPN keys and their history.
 
+## Ads (`0025`)
+
+Two kinds, both behind consent.
+
+**Rewarded** — Google Ad Manager's rewarded slot, through the Publisher Tag. GPT's
+`rewardedSlotGranted` event carries no token, so the nonce is ours: `rpc_ad_nonce()` mints a
+single-use one after checking the flag, the daily cap and the sixty-second spacing, the page
+plays the ad, and `rpc_watch_ad(nonce)` credits 0.2 points once. A replayed or borrowed nonce
+credits nothing. No fill, no consent or no tag means **"No ad available right now"** and no
+credit.
+
+To go live, fill in the ad unit and switch the flag:
+```sql
+update pool.config set value = value || jsonb_build_object(
+  'network_code', '<code>', 'ad_unit_path', '/<code>/<unit>') where key = 'ads';
+update pool.app_flags set enabled = true where key = 'gam_rewarded';
+```
+Until then the thirty-second stub plays, which is also how to test. With the real slot on, the
+stub refuses to pay.
+
+**AdSense** — the tag is in `web/index.html` as Google issued it, neutralised with
+`type="text/plain"` so it cannot run before consent, and `web/public/ads.txt` is served at
+`/ads.txt`. `src/lib/consent.ts` turns the tag into a live script on accept, and `gpt.js` is
+fetched on demand the same way. Rejecting leaves both unloaded.
+
+**Consent** lives in `localStorage` under `pool.consent`, is asked once in a bar at the foot of
+the page, and can be changed at any time on `/privacy`. Essential storage — session, language,
+this answer — is outside it.
+
 ## Running the rules test locally
 Needs a plain Postgres 17 and a role that can create databases:
 ```
@@ -264,6 +293,7 @@ bash tests/run.sh      # rebuilds the db from every migration, then runs the tes
 `tests/game_test.sql` walks a full card: crew creation, RLS, filling, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
 `tests/football_test.sql` covers the rest of the card: the 3-way result, the goals line, the handicap, pushes, the red card's time window, non-runners and withdrawn cards.
 `tests/jackpot_test.sql` covers the rollover: the rake, the compounding, a void never feeding the pot, one competition's jackpot staying out of another's, a single winner taking it all, several winners splitting it by stake with the remainder carried, and settling twice moving nothing.
+`tests/ads_test.sql` covers the rewarded ad: the nonce rules (replayed, borrowed, invented, expired, in-flight past the cap), the sixty-second spacing, ten a day, the flag, and that the stub cannot pay while the real slot is live.
 `tests/provider_test.sql` covers the provider: the request budget and what happens when it runs out, the league catalogue, following and unfollowing, which fixtures are worth a request, odds asked for once rather than once a minute, and the void-on-no-coverage rule.
 `tests/provider_test.mjs` runs the parsers against responses API-Football actually sent (`tests/fixtures/api-football.json`): the 90-minute rule, extra time, every status code, events, line-ups, odds and the name matching.
 `tests/i18n_test.sql` covers the language: the null default, the three-way check, `rpc_set_language()` setting only your own, the pieces a call travels as, that no English prose leaks into them, and the grants.

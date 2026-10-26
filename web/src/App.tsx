@@ -12,17 +12,27 @@ import Album from "./pages/Album";
 import Table from "./pages/Table";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
+import About from "./pages/About";
+import Privacy from "./pages/Privacy";
+import { ConsentBar, Footer } from "./components/Consent";
 
 export default function App() {
   const { session, loading } = useAuth();
   const loc = useLocation();
   if (loading) return <Spinner />;
+  // §ads /about and /privacy are reachable signed out: a cookie banner that links to a page
+  // behind a login is not a cookie banner.
   if (!session) {
     return (
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="*" element={<Navigate to="/login" replace state={{ from: loc.pathname }} />} />
-      </Routes>
+      <>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/about" element={<div className="wrap"><About /><Footer /></div>} />
+          <Route path="/privacy" element={<div className="wrap"><Privacy /><Footer /></div>} />
+          <Route path="*" element={<Navigate to="/login" replace state={{ from: loc.pathname }} />} />
+        </Routes>
+        <ConsentBar />
+      </>
     );
   }
   return (
@@ -40,9 +50,13 @@ export default function App() {
         <Route path="/table" element={<Table />} />
         <Route path="/you" element={<Profile />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </div>
+      <Footer />
+      <ConsentBar />
     </Shell>
   );
 }

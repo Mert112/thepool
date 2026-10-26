@@ -1,5 +1,79 @@
 # Changelog
 
+## 2026-10-26 — real ads, and asking first
+
+Migration `0025_rewarded_ads.sql`, the AdSense tag, `/privacy` and `/about` in three languages,
+and a cookie banner that holds everything back until it is answered.
+
+### The nonce, and why it is ours
+
+Google Publisher Tag's rewarded format **does not hand the page a token**. The
+`rewardedSlotGranted` event carries `{type, amount}` and nothing that proves it happened. (Ad
+Manager's server-side verification exists, but it calls a URL of ours out of band and cannot
+answer "credit this player now".) Taking a string from the client and trusting it would be
+security theatre, so the nonce is minted by the server instead:
+
+1. the player taps **Get points**
+2. `rpc_ad_nonce()` checks the flag, the daily cap and the sixty-second spacing, and issues a
+   single-use nonce that expires in ten minutes
+3. the page loads the rewarded slot and waits for `rewardedSlotGranted`
+4. `rpc_watch_ad(nonce)` credits **0.2 points** — once, for that nonce, inside the caps
+
+`rpc_watch_ad` is a POST, and a POST can be repeated: that is the whole reason this exists.
+`tests/ads_test.sql` covers it — a replayed nonce, somebody else's nonce, an invented nonce, an
+expired nonce, a nonce taken out while there was room and spent after the day filled up, the
+sixty-second spacing (including the older-nonce way round it), ten a day, and the flag.
+
+The reward moved from 0.5 to **0.2**, and is read from `config.ads` rather than hard-coded in
+two places as it was. Ten ads a day is now two points, not five.
+
+### Ads load after consent, not before
+
+- **`web/public/ads.txt`** → `google.com, pub-7965185908085623, DIRECT, f08c47fec0942fa0`,
+  live at https://thepool.today/ads.txt.
+- **The AdSense tag** is in the `<head>` of `web/index.html` exactly as issued, with one change:
+  `type="text/plain"`. That stops the browser executing it. `src/lib/consent.ts` turns it into a
+  live script the moment somebody accepts, and never before. The two instructions — "add this
+  tag" and "load it only after consent" — cannot both be met by a tag that runs on load; this
+  keeps the tag verbatim and the consent real. Reject and it stays inert for good.
+- **The Publisher Tag** (`gpt.js`, for the rewarded slot) is fetched on demand and only with
+  consent. `showRewarded()` resolves `unavailable` without it, and nothing is credited.
+- **The banner** is a bar at the foot of the page, not a modal: it must not stand between
+  somebody and a card that is about to lock. Essential storage — the session, the language, this
+  answer — is not covered by it and is not switchable.
+
+### /privacy and /about
+
+Both in English, Turkish and Bulgarian, linked from a footer on every page and reachable
+**signed out** — a cookie banner that links to a page behind a login is not a cookie banner. The
+privacy page names Google AdSense and Ad Manager, says plainly that cookies are used to serve,
+measure and personalise ads, links to **Google's ad settings** for the opt-out, and carries the
+accept/reject buttons again so the answer can be changed after the banner is gone.
+
+### Still to do before an ad can serve
+
+`config.ads` ships with **`network_code` and `ad_unit_path` empty** and the `gam_rewarded` flag
+**off**, so the thirty-second stub is still what plays. Fill those two in from Ad Manager →
+Inventory → Ad units, switch the flag on, and the real slot takes over with no deploy:
+
+```sql
+update pool.config set value = value || jsonb_build_object(
+  'network_code', '<your code>', 'ad_unit_path', '/<your code>/<unit>') where key = 'ads';
+update pool.app_flags set enabled = true where key = 'gam_rewarded';
+```
+
+With the flag on, the stub stops paying: `rpc_watch_ad(null)` is refused, so the placeholder
+cannot be used as a way to be credited without an ad. A test asserts that.
+
+### Verified in production
+
+Twelve of twelve fingerprints match. `rpc_ad_nonce`, `rpc_watch_ad` and `ad_nonces` all refuse an
+anonymous caller; `config` gives the browser the `ads` row and nothing else — the request budget
+stays server-side. `ads.txt` serves, `/privacy` and `/about` answer 200, and the bundle carries
+all three languages of the policy copy.
+
+---
+
 ## 2026-10-26 — one provider
 
 Migration `0024_api_football.sql`, a new `sync/api-football.mjs`, and `sync/espn-sync.mjs` gone.

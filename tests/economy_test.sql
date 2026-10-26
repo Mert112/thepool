@@ -237,22 +237,25 @@ end $$;
 
 -- --- 12. rewarded ads: half a point a time, ten a day -----------------------------------------------
 do $$ declare before numeric := bal('33333333-cccc-0000-0000-000000000003'); r jsonb; begin
+  -- the sixty-second spacing is tested on its own in ads_test.sql; here it is only in the way
+  update config set value = jsonb_set(value, '{spacing_seconds}', '0') where key = 'ads';
   perform test_as('33333333-cccc-0000-0000-000000000003');
   for i in 1..10 loop
     r := rpc_watch_ad();
-    assert (r->>'credited')::numeric = 0.5, 'each ad is worth half a point';
+    assert (r->>'credited')::numeric = 0.2, 'each ad is worth a fifth of a point';
     assert (r->>'watched_today')::int = i, format('ad %s of the day', i);
   end loop;
-  assert bal('33333333-cccc-0000-0000-000000000003') = before + 5, 'ten ads are 5 points';
+  assert bal('33333333-cccc-0000-0000-000000000003') = before + 2, 'ten ads are 2 points';
   begin perform rpc_watch_ad(); raise exception 'an eleventh ad was allowed';
   exception when others then if sqlerrm not like '%all ten%' then raise; end if; end;
   perform test_reset();
   begin
     insert into ad_views (user_id, day, seq, reward)
-    values ('33333333-cccc-0000-0000-000000000003', (now() at time zone 'utc')::date, 11, 0.5);
+    values ('33333333-cccc-0000-0000-000000000003', (now() at time zone 'utc')::date, 11, 0.2);
     raise exception 'an eleventh ad view was stored';
   exception when check_violation then null; end;
   perform assert_conserved('after a day of ads');
+  update config set value = jsonb_set(value, '{spacing_seconds}', '60') where key = 'ads';
 end $$;
 
 -- --- 13. the ads switch is a feature flag -------------------------------------------------------------
@@ -287,7 +290,7 @@ do $$ begin
   perform test_as('11111111-aaaa-0000-0000-000000000001');
   assert (select display_name from leaderboard('overall') limit 1) = 'Ana', 'the richest leads';
   assert (my_stats()->>'balance')::numeric = bal('11111111-aaaa-0000-0000-000000000001'), 'my_stats carries the balance';
-  assert (my_stats()->>'ad_reward')::numeric = 0.5, 'and what an ad is worth';
+  assert (my_stats()->>'ad_reward')::numeric = 0.2, 'and what an ad is worth';
   perform test_reset();
 end $$;
 
@@ -305,7 +308,7 @@ end $$;
 -- The headline: with nothing minted, every point in the game came from a season start or an ad.
 do $$ declare c numeric := credited(); begin
   perform assert_conserved('the end of the season');
-  assert c = 400 - 60 + 5 + 1000000, format('credited is four starts, Dee''s drain, ten ads and the top-up: %s', c);
+  assert c = 400 - 60 + 2 + 1000000, format('credited is four starts, Dee''s drain, ten ads at 0.2 and the top-up: %s', c);
   assert held() + house() <= c, 'balances and the house never exceed what was credited';
   -- every point that left a balance is refunded, won, with the house, in a jackpot, or still riding
   assert -(select coalesce(sum(amount),0) from ledger where reason = 'stake')

@@ -184,7 +184,9 @@ do $$ begin
            where table_schema = 'pool' and table_name = 'api_usage' and grantee in ('anon','authenticated')) = 0,
     'and nobody outside the server can read it';
   assert (select relrowsecurity from pg_class where oid = 'pool.config'::regclass), 'config is too';
-  assert (select count(*) from config where public) = 0, 'and nothing in it is public yet';
+  assert not (select public from config where key = 'football_api'), 'the request budget is not public';
+  assert (select count(*) from config where public and key <> 'ads') = 0,
+    'and the ad unit is the only row the browser is allowed to read';
   assert (select count(*) from information_schema.role_table_grants
            where table_schema = 'pool' and table_name = 'config'
              and grantee in ('anon','authenticated') and privilege_type <> 'SELECT') = 0,
