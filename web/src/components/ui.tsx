@@ -9,8 +9,21 @@ import { getFlag, setDisplayName, watchAd } from "../lib/api";
 
 export const AD_SECONDS = 30;
 
-export function Avatar({ name, me, sm }: { name: string | null | undefined; me?: boolean; sm?: boolean }) {
-  return <span className={"av" + (me ? " me" : "") + (sm ? " sm" : "")}>{me ? "YO" : initials(name)}</span>;
+// The ten icons, mirroring pool.icons so an avatar renders without waiting for a fetch. The
+// database is still the authority on who has earned what — this is only how they look.
+export const ICON_GLYPH: Record<string, string> = {
+  rookie: "⚽", regular: "📋", crew: "🧣", watcher: "📺", caller: "🎯",
+  sniper: "🎱", banker: "💰", jackpot: "🎰", whale: "🐋", console: "🎮",
+};
+export const ICON_RARITY: Record<string, string> = {
+  rookie: "common", regular: "common", crew: "common", watcher: "uncommon", caller: "uncommon",
+  sniper: "rare", banker: "rare", jackpot: "epic", whale: "epic", console: "legendary",
+};
+
+export function Avatar({ name, icon, me, sm }: { name: string | null | undefined; icon?: string | null; me?: boolean; sm?: boolean }) {
+  const glyph = icon ? ICON_GLYPH[icon] : undefined;
+  const cls = "av" + (me ? " me" : "") + (sm ? " sm" : "") + (glyph ? ` ico r-${ICON_RARITY[icon!] ?? "common"}` : "");
+  return <span className={cls} title={glyph ? undefined : (name ?? undefined)}>{glyph ?? (me ? "YO" : initials(name))}</span>;
 }
 
 export function Pips({ n }: { n: number }) {
@@ -64,7 +77,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {profile && <Link to="/you" title="Your points"><span className="pts">{fmtPts(profile.balance)}</span> <span className="tiny">pts</span></Link>}
           {adsOn && <button className="btn ghost tiny-btn" onClick={() => setAds(true)}>Get points</button>}
           {profile && profile.streak > 0 && <span className="tag hit">{profile.streak}-day streak</span>}
-          <Link to="/settings" title="Settings"><Avatar name={profile?.display_name} me /></Link>
+          <Link to="/settings" title="Settings"><Avatar name={profile?.display_name} icon={profile?.icon} me={!profile?.icon} /></Link>
           <button className="btn ghost tiny-btn" onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
       </div>

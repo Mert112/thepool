@@ -28,6 +28,7 @@ tests/                 end-to-end rules test that runs on plain Postgres
 | Point economy | `0019` | `profiles.balance`, the append-only `ledger`, stakes on calls, multipliers, rewarded ads, `prize_claims` |
 | The jackpot | `0020` | stakes from 1 point; a call nobody lands rolls its losses forward, less a 10% rake |
 | Pari-mutuel | `0021` | the pot pays, not the house: multipliers gone, nothing minted, money in decimals |
+| Profile icons | `0022` | ten icons, nine earned; rarity follows difficulty |
 | Sync | `sync/espn-sync.mjs` | systemd timer, every minute: fixtures a week out (every 30 min), live scoreboards, goals and cards for matches being played, squads for the board, then settlement |
 | Mail | `send-notifications` | drains the queue through Resend |
 
@@ -143,6 +144,31 @@ with `check (seq between 1 and 10)`. `app_flags.rewarded_ads` switches it off.
 
 **The prize.** A balance of 1,000,000 can claim a PlayStation 5: `rpc_claim_prize()` writes a row to
 `prize_claims` for us to handle by hand.
+
+## Profile icons (`0022`)
+
+Ten icons, one worn at a time. Everyone starts with the football; the other nine are earned, and
+the rarer the icon the harder the thing:
+
+| Icon | Rarity | How |
+|---|---|---|
+| ⚽ The Football | common | yours from the moment you sign up |
+| 📋 The Clipboard | common | play five cards through to full time |
+| 🧣 The Scarf | common | join a crew, or start one |
+| 📺 The Set | uncommon | sit through fifty ads |
+| 🎯 The Target | uncommon | land ten calls |
+| 🎱 The Eight Ball | rare | call an exact scoreline and watch it come in |
+| 💰 The Bag | rare | hold 500 points at once, from a season that starts you on 100 |
+| 🎰 The Machine | epic | take a jackpot share worth 100 points or more |
+| 🐋 The Whale | epic | take 250 points or more out of a single pot |
+| 🎮 The Console | legendary | claim the PlayStation 5 |
+
+Every criterion is a question asked of data the game already keeps — settled entries, landed calls,
+ad views, ledger rows, prize claims — so nothing is tracked separately and an icon can never be
+awarded for something that did not happen. `award_icons()` runs at the moments one can be earned
+(settlement, an ad, a crew, a prize claim) and the profile page recounts on load; running it twice
+awards nothing twice. The client cannot insert into `user_icons`, call `award_icons()` or write
+`profiles.icon` — only `rpc_set_icon()`, which refuses an icon you have not unlocked.
 
 **Leaderboards** rank by balance overall, and by what was won in scope for a crew, a week or a
 competition. In a zero-sum game the player who never played can lead, which is the honest answer.

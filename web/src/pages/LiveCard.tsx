@@ -125,7 +125,7 @@ export default function LiveCard() {
           {ranked.slice(0, 12).map((e, i) => (
             <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 12px", borderRadius: 10, background: e.user_id === uid ? "var(--raise)" : "transparent" }}>
               <span className="pos">{i + 1}</span>
-              <Avatar name={e.profiles?.display_name} me={e.user_id === uid} />
+              <Avatar name={e.profiles?.display_name} icon={e.profiles?.icon} me={!e.profiles?.icon && e.user_id === uid} />
               <span style={{ flex: 1 }} className="small">{e.user_id === uid ? "You" : e.profiles?.display_name ?? "Player"}<span className="tiny muted" style={{ marginLeft: 8 }}>{e.hits} of {e.calls.length}</span></span>
               <span className="num" style={{ fontSize: 20, color: e.points >= 0 ? "var(--lime)" : "var(--magenta)" }}>{signedPts(e.points)}</span>
             </div>
@@ -140,7 +140,7 @@ export default function LiveCard() {
             </div>
             {posts.slice(0, 10).map((p) => (
               <div className="post" key={p.id}>
-                <Avatar name={p.profiles?.display_name} me={p.user_id === uid} sm />
+                <Avatar name={p.profiles?.display_name} icon={p.profiles?.icon} me={!p.profiles?.icon && p.user_id === uid} sm />
                 <div><span className="who">{p.user_id === uid ? "You" : p.profiles?.display_name}</span><span className="when">{ago(p.created_at)}</span>
                   {p.body && <div className="small">{p.body}</div>}
                   {p.calls && <div className="receipt">Called {markets.find((k) => k.call_type === p.calls!.call_type)?.short ?? p.calls.call_type} · +{p.calls.points_awarded}</div>}

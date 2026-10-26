@@ -22,12 +22,32 @@ export type Odds = { provider?: string | null; home?: number; away?: number; dra
   spread?: { home_line: number; home: number; away: number }; total?: { line: number; over: number; under: number } };
 export type Card = { id: string; match_id: number; mode: "simple" | "complex"; crew_id: string | null; created_by: string | null; status: "open" | "locked" | "live" | "settled" | "disputed"; crews?: { name: string } | null };
 export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; stake?: number; staked?: boolean; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
-export type Entry = { id: string; card_id: string; user_id: string; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null } };
+export type Entry = { id: string; card_id: string; user_id: string; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null; icon?: string } };
 // the five stakes a call can carry, from pool.stakes
 export const STAKES = [1, 2, 5, 10, 25, 50] as const;
 export type Player = { id: number; team_id: number | null; name: string; position: string | null };
 export type Crew = { id: string; name: string; description: string | null; mode: "simple" | "complex"; owner_id: string; rival_crew_id: string | null; created_at: string };
-export type Profile = { id: string; display_name: string | null; streak: number; balance: number };
+export type Profile = { id: string; display_name: string | null; streak: number; balance: number; icon: string };
+
+// §profile icons — ten of them, nine earned. The catalogue lives in pool.icons; the glyph map in
+// components/ui.tsx mirrors it so an avatar can render without waiting for a fetch.
+export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
+export type IconRow = { code: string; name: string; rarity: Rarity; how: string; glyph: string;
+  sort_order: number; earned_at: string | null; wearing: boolean };
+export async function myIcons(): Promise<IconRow[]> {
+  const { data, error } = await supabase.rpc("my_icons");
+  if (error) fail(error);
+  return (data ?? []) as IconRow[];
+}
+export async function setIcon(code: string): Promise<void> {
+  const { error } = await supabase.rpc("rpc_set_icon", { p_code: code });
+  if (error) fail(error);
+}
+export async function refreshIcons(): Promise<string[]> {
+  const { data, error } = await supabase.rpc("rpc_refresh_icons");
+  if (error) fail(error);
+  return (data ?? []) as string[];
+}
 export type MatchEvent = { id: number; type: "goal" | "yellow" | "red" | "yellow_red"; minute: number; injury_time: number | null; team_id: number; player_name: string; assist_name: string | null; own_goal: boolean; counts: boolean };
 
 const fail = (e: any) => { throw new Error(e?.message ?? String(e)); };
@@ -80,7 +100,7 @@ export async function getCardsForMatch(matchId: number): Promise<Card[]> {
 }
 
 export async function getEntries(cardId: string): Promise<Entry[]> {
-  const { data, error } = await supabase.from("entries").select("*, calls(*), profiles:user_id(display_name)").eq("card_id", cardId).order("points", { ascending: false });
+  const { data, error } = await supabase.from("entries").select("*, calls(*), profiles:user_id(display_name, icon)").eq("card_id", cardId).order("points", { ascending: false });
   if (error) fail(error);
   return data as Entry[];
 }
@@ -197,9 +217,9 @@ export async function getCardPlayers(cardId: string): Promise<CardPlayer[]> {
   return (data ?? []) as CardPlayer[];
 }
 export async function getCrewMembers(id: string) {
-  const { data, error } = await supabase.from("crew_members").select("user_id, role, joined_at, profiles:user_id(display_name)").eq("crew_id", id);
+  const { data, error } = await supabase.from("crew_members").select("user_id, role, joined_at, profiles:user_id(display_name, icon)").eq("crew_id", id);
   if (error) fail(error);
-  return (data ?? []) as unknown as Array<{ user_id: string; role: string; joined_at: string; profiles: { display_name: string | null } }>;
+  return (data ?? []) as unknown as Array<{ user_id: string; role: string; joined_at: string; profiles: { display_name: string | null; icon?: string } }>;
 }
 export async function getCrewCards(crewId: string): Promise<Array<Card & { players: CardPlayer[] }>> {
   const { data, error } = await supabase.from("cards").select("*").eq("crew_id", crewId).in("status", ["open", "locked", "live"]);
@@ -209,9 +229,9 @@ export async function getCrewCards(crewId: string): Promise<Array<Card & { playe
   return cards.map((c, i) => ({ ...c, players: players[i] }));
 }
 export async function getCrewPosts(crewId: string) {
-  const { data, error } = await supabase.from("crew_posts").select("id, body, created_at, user_id, profiles:user_id(display_name), calls(call_type, points_awarded)").eq("crew_id", crewId).order("created_at", { ascending: false }).limit(40);
+  const { data, error } = await supabase.from("crew_posts").select("id, body, created_at, user_id, profiles:user_id(display_name, icon), calls(call_type, points_awarded)").eq("crew_id", crewId).order("created_at", { ascending: false }).limit(40);
   if (error) fail(error);
-  return (data ?? []) as unknown as Array<{ id: string; body: string | null; created_at: string; user_id: string; profiles: { display_name: string | null }; calls: { call_type: CallType; points_awarded: number } | null }>;
+  return (data ?? []) as unknown as Array<{ id: string; body: string | null; created_at: string; user_id: string; profiles: { display_name: string | null; icon?: string }; calls: { call_type: CallType; points_awarded: number } | null }>;
 }
 export async function crewScore(crewId: string): Promise<number> {
   const { data, error } = await supabase.rpc("crew_score", { p_crew: crewId });
@@ -238,7 +258,7 @@ export async function challengeCrew(crewId: string, code: string) {
 }
 
 // standings
-export type LbRow = { user_id: string; display_name: string | null; balance: number; points: number; points_prev: number; cards: number; hits: number; calls: number; hit_rate: number; best_call: CallType | null; best_points: number | null };
+export type LbRow = { user_id: string; display_name: string | null; icon: string; balance: number; points: number; points_prev: number; cards: number; hits: number; calls: number; hit_rate: number; best_call: CallType | null; best_points: number | null };
 export async function leaderboard(scope: "overall" | "competition" | "crew" | "week", key?: string): Promise<LbRow[]> {
   const { data, error } = await supabase.rpc("leaderboard", { p_scope: scope, p_key: key ?? null });
   if (error) fail(error);
@@ -289,7 +309,7 @@ export async function getCompetitions() {
 
 // profile & settings
 export async function getProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase.from("profiles").select("id, display_name, streak, balance").eq("id", userId).maybeSingle();
+  const { data, error } = await supabase.from("profiles").select("id, display_name, streak, balance, icon").eq("id", userId).maybeSingle();
   if (error) fail(error);
   return data as Profile | null;
 }

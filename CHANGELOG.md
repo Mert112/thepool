@@ -221,6 +221,36 @@ Three bugs the tests caught on the way:
 
 ---
 
+### 8. Ten profile icons, nine of them earned
+
+`0022_profile_icons.sql`. Everyone starts with the football and can wear one icon at a time. The
+other nine are achievements, and the rarity follows the difficulty you described: a pile of ads is
+a grind anyone can finish (uncommon), an exact scoreline takes nerve (rare), a big jackpot takes
+luck as well (epic), and the PlayStation is the one icon almost nobody will ever wear (legendary).
+
+| Icon | Rarity | How |
+|---|---|---|
+| ⚽ The Football | common | yours from the moment you sign up |
+| 📋 The Clipboard | common | play five cards through to full time |
+| 🧣 The Scarf | common | join a crew, or start one |
+| 📺 The Set | uncommon | sit through fifty ads |
+| 🎯 The Target | uncommon | land ten calls |
+| 🎱 The Eight Ball | rare | call an exact scoreline and watch it come in |
+| 💰 The Bag | rare | hold 500 points at once, from a season that starts you on 100 |
+| 🎰 The Machine | epic | take a jackpot share worth 100 points or more |
+| 🐋 The Whale | epic | take 250 points or more out of a single pot |
+| 🎮 The Console | legendary | claim the PlayStation 5 |
+
+Every criterion is a question asked of data the game already keeps, so nothing is tracked
+separately and an icon cannot be awarded for something that did not happen. The client cannot
+insert into `user_icons`, call `award_icons()` or write `profiles.icon`; `rpc_set_icon()` refuses
+an icon you have not unlocked, and `tests/icons_test.sql` proves all three.
+
+The icon travels with the name, so it shows on the table, the standings, the crew room and the top
+bar — with a coloured ring for its rarity and a glow on the legendary one.
+
+---
+
 ## Decisions I made, and would like checked
 
 These were not spelled out in the brief. Each is easy to reverse.
@@ -274,7 +304,16 @@ These were not spelled out in the brief. Each is easy to reverse.
    records when the migration ran; `score_call` and `process_match_updates` leave anything older
    alone. Existing settled cards keep their old points and nobody is charged retrospectively.
 
-12. **`matches.odds` stays, but no longer prices anything.** The decimal prices in it were the old
+12. **The icons are glyphs, not images.** Ten emoji with a rarity-coloured ring, so there are no
+    image assets to host, size or cache, and nothing to go missing. If you want drawn artwork
+    instead, the catalogue is ten rows in `pool.icons` and only the `glyph` column changes.
+
+13. **I picked the thresholds.** Fifty ads, ten landed calls, 500 points held, a 100-point jackpot
+    share, a 250-point pot share. They are calibrated to a 100-point season start and are all one
+    `update pool.icons` away from being something else — the criteria themselves live in
+    `award_icons()`.
+
+14. **`matches.odds` stays, but no longer prices anything.** The decimal prices in it were the old
    scoring (`points = 10 × price`). That is gone. The column has to stay, because it also carries
    the goals line and the handicap the card is played against. The prices are now unused data.
 

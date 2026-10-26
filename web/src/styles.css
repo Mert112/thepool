@@ -410,3 +410,30 @@ img, svg, video { max-width: 100%; }
 /* a call nobody landed last time out carries its losses forward */
 .jackpot { display: inline-block; margin: 4px 0; font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
   text-transform: uppercase; padding: 3px 10px; border-radius: 999px; background: var(--lime); color: var(--ink); }
+
+/* profile icons: the glyph sits in the avatar, and the ring says how rare it is */
+.av.ico { background: var(--raise); font-size: 15px; line-height: 1; border: 2px solid var(--mute); }
+.av.ico.sm { font-size: 12px; }
+.av.ico.r-common    { border-color: var(--mute); }
+.av.ico.r-uncommon  { border-color: var(--green); }
+.av.ico.r-rare      { border-color: #4aa3ff; }
+.av.ico.r-epic      { border-color: #b06cff; }
+.av.ico.r-legendary { border-color: var(--lime); box-shadow: 0 0 0 1px rgba(215,255,63,0.35), 0 0 14px -2px rgba(215,255,63,0.55); }
+
+.icons-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.icon-card { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+  padding: 12px 8px; border-radius: 12px; border: 2px solid var(--line); background: transparent;
+  color: var(--text); min-height: 118px; }
+.icon-card .face { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 20px; line-height: 1; background: var(--raise); border: 2px solid var(--mute); }
+.icon-card.locked { opacity: 0.45; }
+.icon-card.locked .face { filter: grayscale(1); }
+.icon-card.on { border-color: var(--lime); background: var(--lime-ink); }
+.icon-card .nm { font-size: 11px; font-weight: 700; line-height: 1.25; }
+.icon-card .rar { font-size: 9px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.rar.r-common { color: var(--mute); } .rar.r-uncommon { color: var(--green); }
+.rar.r-rare { color: #4aa3ff; } .rar.r-epic { color: #b06cff; } .rar.r-legendary { color: var(--lime); }
+.icon-card.r-uncommon .face { border-color: var(--green); }
+.icon-card.r-rare .face { border-color: #4aa3ff; }
+.icon-card.r-epic .face { border-color: #b06cff; }
+.icon-card.r-legendary .face { border-color: var(--lime); }

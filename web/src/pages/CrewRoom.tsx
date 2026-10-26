@@ -88,7 +88,7 @@ export default function CrewRoom() {
           {table.map((r, i) => (
             <div key={r.user_id} className={"trow lb crew" + (r.user_id === uid ? " me" : "")}>
               <span className="pos">{i + 1}</span>
-              <Avatar name={r.display_name} me={r.user_id === uid} />
+              <Avatar name={r.display_name} icon={r.icon} me={false} />
               <span className="small">{nameOf(r.user_id)} {i === 0 && <span className="tag solid" style={{ marginLeft: 6 }}>Leader</span>}</span>
               <span className="small muted hide-s">{r.cards} cards</span>
               <span className="small muted hide-s">{r.hit_rate}%</span>

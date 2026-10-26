@@ -2,7 +2,8 @@
 // and the full prediction history — every card played, with each call and whether it hit or missed.
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { claimPrize, myHistory, myLedger, myStats, type HistoryCall, type HistoryCard, type LedgerRow } from "../lib/api";
+import { claimPrize, myHistory, myIcons, myLedger, myStats, refreshIcons, setIcon,
+  type HistoryCall, type HistoryCard, type IconRow, type LedgerRow } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
 import { ago, fmtDay, ord } from "../lib/format";
 import { pts as fmtPts, signedPts } from "../lib/calls";
@@ -26,13 +27,19 @@ export default function Profile() {
   const [ads, setAds] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimErr, setClaimErr] = useState<string | null>(null);
+  const [iconErr, setIconErr] = useState<string | null>(null);
   const { data, error, loading, reload } = useLoad(async () => {
-    const [stats, history, ledger] = await Promise.all([myStats(), myHistory(60), myLedger(12)]);
-    return { stats, history, ledger };
+    await refreshIcons();   // pick up anything earned since the last visit
+    const [stats, history, ledger, icons] = await Promise.all([myStats(), myHistory(60), myLedger(12), myIcons()]);
+    return { stats, history, ledger, icons };
   }, []);
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorBox msg={error} />;
-  const s = data!.stats, history = data!.history, ledger = data!.ledger;
+  const s = data!.stats, history = data!.history, ledger = data!.ledger, icons = data!.icons;
+  const wear = async (code: string) => {
+    setIconErr(null);
+    try { await setIcon(code); await refreshProfile(); reload(); } catch (e: any) { setIconErr(e.message ?? String(e)); }
+  };
   const max = Math.max(1, ...s.competitions.map((c) => c.points));
   const balance = profile?.balance ?? s.balance;
   const pct = Math.min(100, (balance / s.prize_target) * 100);
@@ -62,6 +69,21 @@ export default function Profile() {
               : <>Nothing is promised to an open card right now.</>}
             {" "}Across every settled card you are {s.points > 0 ? "up" : s.points < 0 ? "down" : "level"} {fmtPts(Math.abs(s.points))}.
           </div>
+        </div>
+
+        <div className="panel">
+          <div className="row-of" style={{ justifyContent: "space-between", marginBottom: 4 }}>
+            <div className="eyebrow">Your icon</div>
+            <span className="tiny muted">{icons.filter((i) => i.earned_at).length} of {icons.length} unlocked</span>
+          </div>
+          <div className="small muted" style={{ marginBottom: 12 }}>
+            Nine of these are earned, and the harder the thing the rarer the icon. Tap one you have
+            unlocked to wear it.
+          </div>
+          <div className="icons-grid">
+            {icons.map((i) => <IconCard key={i.code} i={i} onWear={wear} />)}
+          </div>
+          <ErrorBox msg={iconErr} />
         </div>
 
         <div className="panel">
@@ -137,6 +159,21 @@ export default function Profile() {
       </div>
       {ads && <AdModal onClose={() => { setAds(false); refresh(); }} onCredited={refresh} />}
     </div>
+  );
+}
+
+// one icon: what it is, how rare, and either how to get it or a tap to wear it
+function IconCard({ i, onWear }: { i: IconRow; onWear: (code: string) => void }) {
+  const locked = !i.earned_at;
+  const cls = `icon-card r-${i.rarity}` + (locked ? " locked" : "") + (i.wearing ? " on" : "");
+  return (
+    <button className={cls} disabled={locked} onClick={() => onWear(i.code)}
+            title={locked ? `Locked — ${i.how}` : i.wearing ? `${i.name} · worn` : `${i.name} — tap to wear`}>
+      <span className="face">{i.glyph}</span>
+      <span className="nm">{i.name}</span>
+      <span className={`rar r-${i.rarity}`}>{i.wearing ? "Worn" : i.rarity}</span>
+      {locked && <span className="tiny muted" style={{ lineHeight: 1.2 }}>{i.how}</span>}
+    </button>
   );
 }
 
