@@ -1,4 +1,9 @@
 -- The Pool — scheduled jobs (pg_cron + pg_net calling the edge functions).
+--
+-- Applied to production 2026-10-26. Three of the six jobs are live — lock-cards,
+-- deadline-reminders and weekly-digest, all pure SQL needing no secret. The other three are
+-- commented out below with the reason against each. `tests/run.sh` still skips this file:
+-- pg_cron and pg_net are hosted-only.
 -- Installed in its own schema so it never touches the other tables in this project.
 create schema if not exists pool;
 set search_path = pool, public, extensions;
@@ -26,12 +31,14 @@ end $$;
 
 revoke execute on function call_edge_function(text, jsonb) from public, anon, authenticated;
 
--- Fixtures and squads: twice an hour at :07 and :37 (sync-live stays quiet in those minutes so the
--- free tier's 10 req/min is never shared between two runs)
-select cron.schedule('sync-fixtures', '7,37 * * * *', $$ select pool.call_edge_function('sync-fixtures') $$);
-
--- Live scores and events: every minute while anything is in play or about to be
-select cron.schedule('sync-live', '* * * * *', $$ select pool.call_edge_function('sync-live') $$);
+-- RETIRED (2026-10-26, see 0024). These two scheduled the football-data.org edge functions,
+-- which were replaced first by the ESPN sync and then by sync/api-football.mjs running on the
+-- app server under thepool-sync.timer. Scheduling them now would point a second, retired
+-- provider at the same `matches` rows every minute and fight the live sync over them, so they
+-- are not applied. The edge functions themselves are still deployed but are never called.
+--
+-- select cron.schedule('sync-fixtures', '7,37 * * * *', $$ select pool.call_edge_function('sync-fixtures') $$);
+-- select cron.schedule('sync-live',     '* * * * *',    $$ select pool.call_edge_function('sync-live') $$);
 
 -- Lock cards at kickoff even if the provider is late
 select cron.schedule('lock-cards', '* * * * *', $$ select pool.sync_card_status() $$);
@@ -42,5 +49,16 @@ select cron.schedule('deadline-reminders', '*/5 * * * *', $$ select pool.enqueue
 -- Friday crew card, 09:00 UTC
 select cron.schedule('weekly-digest', '0 9 * * 5', $$ select pool.enqueue_weekly_digest() $$);
 
--- Drain the email queue
-select cron.schedule('send-notifications', '* * * * *', $$ select pool.call_edge_function('send-notifications') $$);
+-- Drain the email queue.
+--
+-- NOT APPLIED either, and for a different reason: call_edge_function() needs the service-role
+-- key in the database's vault, and the key is already on the sync host. sync/api-football.mjs
+-- drains the queue at the end of each pass instead, which is the same once-a-minute cadence
+-- without the key ever reaching the database. To hand it back to Supabase, store the two
+-- secrets and uncomment this line — then drop drainMail() from the sync, or the queue is
+-- drained twice a minute.
+--
+--   select vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
+--   select vault.create_secret('<service_role_key>',                'service_role_key');
+--
+-- select cron.schedule('send-notifications', '* * * * *', $$ select pool.call_edge_function('send-notifications') $$);

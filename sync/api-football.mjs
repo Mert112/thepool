@@ -495,6 +495,33 @@ async function odds(base, cfg) {
   return n;
 }
 
+// §7 Drain the email queue.
+//
+// `0006` had pg_cron do this through pg_net, which needs the service-role key stored in the
+// database's vault. The key is already on this host, in sync/.env, so the queue is drained from
+// here instead and the key never goes near the database. Guarded both ways: a mail failure
+// cannot stop the match sync, and the sync cannot stop the mail.
+//
+// (To hand it back to Supabase instead, put `project_url` and `service_role_key` in the vault
+// and schedule pool.call_edge_function('send-notifications') — the function is there and ready.
+// Then drop this step, or the queue is drained twice a minute, which is only wasteful.)
+async function drainMail() {
+  // ask first: an empty queue is the normal case, and waking the function costs an invocation
+  const { count, error } = await db.from("notifications").select("id", { count: "exact", head: true })
+    .is("sent_at", null).is("error", null).lte("scheduled_for", now());
+  if (error) throw new Error(error.message);
+  if (!count) return 0;
+  const r = await fetch(`${env.SUPABASE_URL}/functions/v1/send-notifications`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}` },
+    body: "{}",
+    signal: AbortSignal.timeout(55000),
+  });
+  if (!r.ok) throw new Error(`send-notifications ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const j = await r.json();
+  return j.sent ?? 0;
+}
+
 // ---------------------------------------------------------------------------
 async function main() {
   const t0 = Date.now(), state = loadState();
@@ -521,8 +548,11 @@ async function main() {
   if (doSquads) { sq = await squads(base, cfg); if (sq) state.lastSquads = now(); }
   od = await odds(base, cfg);
 
+  let mailed = 0;
   if (!DRY) {
     must(await db.rpc("process_match_updates"), "settlement");
+    // settlement is what fills the queue, so the drain runs straight after it
+    mailed = (await isolate("mail", drainMail)) ?? 0;
     state.lastRun = now();
     saveState(state);
   }
@@ -530,6 +560,7 @@ async function main() {
   const left = DRY ? "-" : must(await db.rpc("api_left"), "api_left");
   log(`${cat ? `catalogue ${cat} · ` : ""}${fx ? `fixtures ${fx.written}/${fx.got} in ${fx.leagues} leagues · ` : ""}`
     + `live ${liveSeen}/${live.length} · results ${checkSeen} · squads ${sq} · odds ${od} · `
+    + `${mailed ? `mailed ${mailed} · ` : ""}`
     + `${spent} requests${refused ? ` · ${refused} refused by the budget` : ""} · ${left} left today · ${Date.now() - t0}ms`);
 }
 

@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-10-26 — the scheduler, and a backlog retired
+
+`0006_cron.sql` applied at last, three jobs of its six. The 51 notifications that had been
+sitting in the queue since September are marked sent without being emailed.
+
+### The backlog
+
+51 rows — 28 results, 12 crew-activity, 10 new-card, 1 correction — queued between 21 September
+and 10 October while nothing drained the queue. They are now `sent_at = now()` with
+`error = 'retired unsent 2026-10-26: …'`. The error line matters: `sent_at` alone would read as
+51 mails that went out, and in a month nobody would remember that they did not. **This was done
+before the drain was switched on**, or the first tick would have emailed all of them.
+
+### What of `0006` is live
+
+| Job | Schedule | Applied |
+|---|---|---|
+| `lock-cards` | every minute | **yes** |
+| `deadline-reminders` | every 5 minutes | **yes** |
+| `weekly-digest` | Fridays 09:00 UTC | **yes** |
+| `sync-fixtures` | twice an hour | **no — retired provider** |
+| `sync-live` | every minute | **no — retired provider** |
+| `send-notifications` | every minute | **no — drained from the sync host instead** |
+
+**`sync-fixtures` and `sync-live` are not timers that should be running.** They are the
+football-data.org edge functions, replaced by ESPN and then by `sync/api-football.mjs` under
+`thepool-sync.timer` in `0024`. They have never been scheduled — there was no pg_cron to
+schedule them with — and scheduling them now would point a second, retired provider at the same
+`matches` rows every minute, writing football-data ids over API-Football ones. They stay
+deployed but uncalled. The two lines are commented out in `0006` with the reason against them,
+so the file no longer promises something that must not happen.
+
+**The email drain** needs the service-role key, and `call_edge_function()` reads it from the
+database's vault — which would mean putting the key in the database. It is already on the sync
+host, so `drainMail()` runs at the end of each sync pass instead: same once-a-minute cadence,
+key never leaves the host. It asks the queue first and only wakes the function when something is
+due, and it is wrapped so a mail failure cannot stop the match sync or the other way round. The
+vault route is still there if it is wanted — two secrets and one uncommented line, documented in
+`0006`.
+
+### Verified
+
+`pg_cron` 1.6.4 and `pg_net` 0.19.5 installed. `lock-cards` has fired and succeeded. The
+notification function answers `{"ok":true,"sent":0}` to the sync host's key and **403** to a
+caller without it. The queue is empty, so nothing has been sent — which is the correct outcome
+for a backlog that was deliberately retired.
+
+---
+
 ## 2026-10-26 — real ads, and asking first
 
 Migration `0025_rewarded_ads.sql`, the AdSense tag, `/privacy` and `/about` in three languages,

@@ -30,6 +30,7 @@ tests/                 end-to-end rules test that runs on plain Postgres
 | The jackpot | `0020` | stakes from 1 point; a call nobody lands rolls its losses forward, less a 10% rake |
 | Pari-mutuel | `0021` | the pot pays, not the house: multipliers gone, nothing minted, money in decimals |
 | Profile icons | `0022` | ten icons, nine earned; rarity follows difficulty |
+| Scheduler | `pg_cron` on Supabase | `lock-cards` every minute, `deadline-reminders` every 5, `weekly-digest` on Fridays. `sync-fixtures` and `sync-live` are **not** scheduled — they are the retired football-data.org functions (see `0006`) |
 | Sync | `sync/api-football.mjs` | systemd timer, every minute: the in-play fixtures somebody is playing, twenty to a request, with their events and line-ups; fixtures and squads daily; one results check per match at full time; then settlement. Every request reserved from the database first |
 | Mail | `send-notifications` | drains the queue through Resend |
 
