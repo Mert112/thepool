@@ -39,13 +39,14 @@ exception when others then
   if sqlerrm not like p_like then raise exception 'expected "%", got "%"', p_like, sqlerrm; end if;
   return true;
 end $$;
-create or replace function pts(p_user text, p_match int) returns int language sql as $$
-  select e.points from entries e join cards c on c.id = e.card_id where c.match_id = p_match and e.user_id = p_user::uuid $$;
 create or replace function res(p_user text, p_match int, p_ct call_type) returns call_result language sql as $$
   select k.result from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
   where c.match_id = p_match and e.user_id = p_user::uuid and k.call_type = p_ct $$;
-create or replace function mult_of(p_user text, p_match int, p_ct call_type) returns numeric language sql as $$
-  select k.multiplier from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
+create or replace function pts(p_user text, p_match int) returns numeric language sql stable as $$
+  select e.points from entries e join cards c on c.id = e.card_id
+  where c.match_id = p_match and e.user_id = p_user::uuid $$;
+create or replace function paid(p_user text, p_match int, p_ct call_type) returns numeric language sql stable as $$
+  select k.points_awarded from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
   where c.match_id = p_match and e.user_id = p_user::uuid and k.call_type = p_ct $$;
 create or replace function finish(p_match int, h int, a int) returns void language sql as $$
   update matches set status = 'FINISHED', utc_date = now() - interval '3 hours', home_score = h, away_score = a,
@@ -112,7 +113,7 @@ end $$;
 -- --- the 3-way result, priced from the odds; a withdrawn card; non-runners ----------
 select play(:'A', 8000, '[{"call_type":"winner","pick":"draw"}]');
 do $$ begin
-  assert mult_of('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'winner') = 3, 'the draw pays 3×, a team 1.5×';
+  assert (select pot from card_pots((select id from cards where match_id = 8000 and crew_id is null)) where key = 'draw') = 10, 'the draw carries the whole pot so far';
   assert (select label from card_crowd((select id from cards where match_id = 8000 and crew_id is null)) where call_type = 'winner' and key = 'draw') = 'Draw', 'crowd: draw';
 end $$;
 do $$ declare card uuid := (select id from cards where match_id = 8000 and crew_id is null); begin
@@ -130,8 +131,11 @@ select process_match_updates();
 do $$ begin
   assert res('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'scorer') = 'void', 'an unused sub voids the scorer';
   assert res('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'yellow') = 'miss', 'played, not booked: a miss';
-  -- three calls at the default 10: the result pays 10 × 1.5, the void hands 10 back, the yellow loses 10
-  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8000) = 15 + 10 - 30, format('Ana is %s on the card', pts('aaaaaaaa-0000-0000-0000-000000000001', 8000));
+  -- three calls at the default 10. Ana is alone in the result pot, so 10 goes in, 1 is raked and 9
+  -- comes back; the void is handed back whole; the yellow is lost and rolls into the jackpot.
+  assert paid('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'winner') = 9, 'the result pot paid 9';
+  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8000) = 9 + 10 - 30, format('Ana is %s on the card', pts('aaaaaaaa-0000-0000-0000-000000000001', 8000));
+  assert jackpot_of('FRI', 'yellow') = 9, 'the yellow nobody landed rolled 9 forward';
   assert res('bbbbbbbb-0000-0000-0000-000000000002', 8000, 'total') = 'miss', 'one goal is under 2.5';
 end $$;
 
@@ -169,20 +173,27 @@ insert into matches (id, competition_code, sport, season, utc_date, status, home
 select play(:'A', 8500, '[{"call_type":"red","player_id":80011,"pick":"31-45"}]');
 select play(:'B', 8500, '[{"call_type":"red","player_id":80011,"pick":"76-90"}]');
 do $$ begin
-  assert mult_of('aaaaaaaa-0000-0000-0000-000000000001', 8500, 'red') = 60, 'a window multiplies the call: 10 × 6';
   assert (select label from card_crowd((select id from cards where match_id = 8500 and crew_id is null)) where key = '80011:31-45') = 'Krishna · 31-45''', 'crowd: the window';
+  -- two players, 10 each: 20 in the pot, 18 after the rake, so a point on either window is worth 1.80
+  assert (select per_point from card_pots((select id from cards where match_id = 8500 and crew_id is null)) where key = '80011:31-45') = 1.8, 'a point on that window returns 1.80';
 end $$;
 update matches set status = 'IN_PLAY', utc_date = now() - interval '1 hour' where id = 8500;
 insert into match_events (match_id, type, minute, injury_time, team_id, player_id, provider_key) values (8500, 'red', 45, 2, 8001, 80011, 'r1');
 select process_match_updates();
 do $$ begin
   assert res('aaaaaaaa-0000-0000-0000-000000000001', 8500, 'red') = 'hit', '45+2 lands in 31–45, during play';
-  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8500) = 10 * 60 - 10, 'a 10 stake at 60× returns 600';
+  -- a pot cannot pay until it closes: the call has landed, but full time decides what it is worth
+  assert paid('aaaaaaaa-0000-0000-0000-000000000001', 8500, 'red') = 0, 'nothing is paid while the match is on';
+  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8500) = -10, 'the card is still just the stake, out';
 end $$;
 select finish(8500, 0, 1);
 select process_match_updates();
 do $$ begin
   assert res('bbbbbbbb-0000-0000-0000-000000000002', 8500, 'red') = 'miss', 'the wrong window misses';
+  -- 20 in, 2 raked, 18 to the only right answer
+  assert paid('aaaaaaaa-0000-0000-0000-000000000001', 8500, 'red') = 18, 'and full time pays the pot';
+  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8500) = 8, 'Ana is 8 up on the card';
+  assert pts('bbbbbbbb-0000-0000-0000-000000000002', 8500) = -10, 'Ben is 10 down';
 end $$;
 
 -- --- the save path: Türkiye v France (the bug behind "No pick · 0") -----------------

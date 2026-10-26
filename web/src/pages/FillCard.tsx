@@ -1,8 +1,9 @@
 // §5.4 Filling the card: every market on one screen, a stake on each call, a running slip.
 //
-// Points are a currency (0019). Each call carries a stake of 10, 25, 50, 100 or 200; the stake
-// leaves the balance when the card locks at kick-off, and a call that lands returns stake ×
-// multiplier. Nothing is free, so there is no boost any more — the stake is the lever.
+// Points are a currency, and the pot is all there is to win (0021). Every stake on a call goes
+// into one pot for that card; at full time a void leaves it, the house rakes 10%, and the rest —
+// plus any jackpot carried in — is split among the right answers in proportion to their stakes.
+// So what a pick is worth is not a fixed number: it is what the rest of the room has done.
 //
 // Two calls that cannot both land are a hedge, and the server refuses the card outright, so a new
 // pick replaces the one it contradicts. That used to happen in silence — one line in the slip at the
@@ -12,12 +13,12 @@
 // what the database kept, so "I filled it in" and "it says No pick" can never disagree again.
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getCard, getCrowd, getJackpots, getMarkets, getMatch, getMyEntry, getSquads, myCommittedStake, saveCalls, STAKES,
-  type Call, type CallType, type Market, type Player } from "../lib/api";
+import { getCard, getCardPots, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, myCommittedStake, saveCalls, STAKES,
+  type Call, type CallType, type Market, type Player, type PotRow } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, soon } from "../lib/format";
-import { clashes, fmtMult, isPlayerMarket, lineOf, multiplierOf, multiplierOfCall, multiplierRange, offered,
-  pickText as describe, returnOf, signed, spreadFor, teamName as nameOf } from "../lib/calls";
+import { clashes, isPlayerMarket, lineOf, offered, perPoint, pickText as describe, pts, signed,
+  spreadFor, teamName as nameOf } from "../lib/calls";
 import { Bar, Empty, ErrorBox, Spinner } from "../components/ui";
 
 type Picks = Partial<Record<CallType, Call>>;
@@ -44,13 +45,13 @@ export default function FillCard() {
     if (!card) throw new Error("This card does not exist or is not yours to see.");
     const match = await getMatch(card.match_id);
     if (!match) throw new Error("Fixture missing.");
-    const [markets, entry, crowd, squads, committed, jackpots] = await Promise.all([
+    const [markets, entry, crowd, squads, committed, pots] = await Promise.all([
       getMarkets(), getMyEntry(card.id, uid), getCrowd(card.id), getSquads(match.home_team_id, match.away_team_id),
-      myCommittedStake(), getJackpots(match.competition_code),
+      myCommittedStake(), getCardPots(card.id),
     ]);
     // committed counts this card too; the page works out what is left after this card's own stakes
     const mine = (entry?.calls ?? []).reduce((s, c) => s + (c.stake ?? 0), 0);
-    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entry, crowd, squads, jackpots, elsewhere: committed - mine };
+    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entry, crowd, squads, pots, elsewhere: committed - mine };
   }, [id]);
 
   // hydrate from the saved entry
@@ -88,10 +89,17 @@ export default function FillCard() {
   const setStake = (k: CallType, n: number) => { setSaved(null); setErr(null); setStakes((s) => ({ ...s, [k]: n })); };
 
   const slip = useMemo(() => (data?.markets ?? []).filter((k) => picks[k.call_type]), [data, picks]);
-  // what a call returns if it lands: the stake times the multiplier it was taken at
-  const payout = (k: Market) => { const c = picks[k.call_type]; return c ? returnOf(stakeOf(k.call_type), multiplierOfCall(k, c)) : 0; };
+  // what a call would return if it landed, at the split as it stands: the purse on that pick
+  // divided by what is on it. It moves as other people play, which is the point.
+  const payout = (k: Market) => {
+    const c = picks[k.call_type];
+    if (!c) return null;
+    const row = pickRow(k.call_type, keyOf(c));
+    const pp = row ? perPoint(row.purse, row.pick_stake) : null;
+    return pp == null ? null : Math.floor(pp * stakeOf(k.call_type) * 100) / 100;
+  };
   const staked = slip.reduce((s, k) => s + stakeOf(k.call_type), 0);
-  const toWin = slip.reduce((s, k) => s + payout(k), 0);
+  const toWin = slip.reduce((s, k) => s + (payout(k) ?? 0), 0);
   // what is left for this card: the balance, less what other open cards have already promised
   const purse = (profile?.balance ?? 0) - (data?.elsewhere ?? 0);
   const overdrawn = staked > purse;
@@ -138,7 +146,18 @@ export default function FillCard() {
 
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorBox msg={error} />;
-  const { card, match, markets, crowd, squads, jackpots } = data!;
+  const { card, match, markets, crowd, squads, pots } = data!;
+  // the pot on each call, and what a point on each pick is worth at the split as it stands
+  const potOf = (ct: CallType) => pots.find((p) => p.call_type === ct);
+  const pickRow = (ct: CallType, key: string): PotRow | undefined => pots.find((p) => p.call_type === ct && p.key === key);
+  // the key card_pots() builds for a pick, so an option can look up its own price
+  const keyOf = (c: Call): string =>
+    c.call_type === "winner" ? (c.pick === "draw" ? "draw" : String(c.team_id))
+    : c.call_type === "draw" || c.call_type === "total" ? String(c.yes)
+    : c.call_type === "spread" ? String(c.team_id)
+    : c.call_type === "score" ? `${c.home_goals}-${c.away_goals}`
+    : c.call_type === "red" ? `${c.player_id}:${c.pick ?? "any"}`
+    : String(c.player_id);
   if (!match) return <Empty>Fixture missing.</Empty>;
   const teamName = (t: number) => nameOf(match, t);
   const playerName = playerNameOf(squads);
@@ -146,11 +165,17 @@ export default function FillCard() {
   const pickText = (c: Call) => describe(c, match, playerName);
   const sides = [match.home_team_id, match.away_team_id];
 
-  const opt = (k: Market, on: boolean, label: string, v: Call) => (
-    <button key={label} disabled={!editable} className={"opt" + (on ? " on" : "")} onClick={() => set(k.call_type, on ? null : v)}>
-      {label}<span className="odds">{fmtMult(multiplierOf(k, v.pick ?? null))}</span>
-    </button>
-  );
+  // every option wears its price: what one point on it returns if it comes in, at the split as it
+  // stands. Nothing on it yet and the whole purse is there for whoever goes first.
+  const opt = (k: Market, on: boolean, label: string, v: Call) => {
+    const row = pickRow(k.call_type, keyOf({ ...v, call_type: k.call_type }));
+    const pp = row ? perPoint(row.purse, row.pick_stake) : null;
+    return (
+      <button key={label} disabled={!editable} className={"opt" + (on ? " on" : "")} onClick={() => set(k.call_type, on ? null : v)}>
+        {label}<span className="odds" title={pp == null ? "Nobody is on this yet" : "Returned per point staked, at the split as it stands"}>{pp == null ? "—" : `${pts(pp)}×`}</span>
+      </button>
+    );
+  };
 
   return (
     <div>
@@ -162,10 +187,11 @@ export default function FillCard() {
             {editable ? `Locks in ${countdown(match.utc_date, now)} · edit as often as you like until then` : "This card is locked."}
           </div>
           <div className="tiny muted" style={{ marginBottom: 16 }}>
-            Every call carries a stake, from a single point. Nothing leaves your balance until kick-off;
-            after that a call that lands returns its stake times the multiplier, a call that misses loses
-            the stake, and a void call hands the stake back. Where nobody landed a call last time out, what
-            they lost is carried here as a jackpot and shared among whoever lands it now.
+            Every call carries a stake, from a single point, and every stake on a call goes into one pot.
+            Nothing leaves your balance until kick-off. At full time a void is handed back in full, the
+            house takes 10% of what is left, and the rest is shared among the right answers in proportion
+            to what they staked — so a pick is worth more the fewer people are on it. Where nobody landed
+            a call last time out, what they lost is carried here as a jackpot on top.
           </div>
 
           {err && <div className="banner bad" role="alert"><div><b>Not saved.</b> {err}</div></div>}
@@ -205,16 +231,16 @@ export default function FillCard() {
                 <div className="head">
                   <div>
                     <h3 className="display" style={{ margin: 0 }}>{k.title}</h3>
-                    {editable && !!jackpots[k.call_type] && (
+                    {editable && !!potOf(k.call_type)?.jackpot && (
                       <div className="jackpot" title="Nobody landed this call last time out. What they lost is carried here, and shared among whoever lands it now.">
-                        Jackpot: +{jackpots[k.call_type]!.toLocaleString()} points
+                        Jackpot: +{pts(potOf(k.call_type)!.jackpot)} points
                       </div>
                     )}
                     <div className="small muted explainer">{k.explainer}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div className="pts">{on ? fmtMult(multiplierOfCall(k, cur!)) : multiplierRange(k)}</div>
-                    <div className="tiny muted">your stake back, times this</div>
+                    <div className="pts">{pts(potOf(k.call_type)?.pot ?? 0)}</div>
+                    <div className="tiny muted">in the pot{potOf(k.call_type)?.jackpot ? ", plus the jackpot" : ""}</div>
                     {on && editable && <button className="remove-call" onClick={() => set(k.call_type, null)}>Remove</button>}
                   </div>
                 </div>
@@ -287,7 +313,7 @@ export default function FillCard() {
                     {STAKES.map((n) => (
                       <button key={n} disabled={!editable} className={"chip stake" + (stakeOf(k.call_type) === n ? " on" : "")} onClick={() => setStake(k.call_type, n)}>{n}</button>
                     ))}
-                    <span className="stake-pay">returns <b>{payout(k)}</b> if it lands</span>
+                    <span className="stake-pay">{payout(k) == null ? <>the whole purse, if nobody else joins you</> : <>about <b>{pts(payout(k))}</b> back if it lands</>}</span>
                   </div>
                 )}
 
@@ -302,7 +328,7 @@ export default function FillCard() {
         <div className="stack">
           <div className="panel">
             <div className="eyebrow" style={{ marginBottom: 8 }}>Your points</div>
-            <div className="num lime" style={{ fontSize: 40, lineHeight: 1 }}>{profile?.balance ?? "—"}</div>
+            <div className="num lime" style={{ fontSize: 40, lineHeight: 1 }}>{pts(profile?.balance)}</div>
             <div className="small muted" style={{ marginTop: 6 }}>
               {data!.elsewhere > 0
                 ? <>{data!.elsewhere} is already promised to other open cards, leaving <b>{Math.max(0, purse)}</b> for this one.</>
@@ -310,7 +336,7 @@ export default function FillCard() {
             </div>
             <hr className="hr" />
             <div className="small" style={{ display: "flex", justifyContent: "space-between" }}><span className="muted">Staked on this card</span><b className={overdrawn ? "magenta" : undefined}>{staked}</b></div>
-            <div className="small" style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}><span className="muted">Back if it all lands</span><b className="lime">{toWin}</b></div>
+            <div className="small" style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}><span className="muted">Back if it all lands</span><b className="lime">{pts(toWin)}</b></div>
             {overdrawn && <div className="tiny magenta" style={{ marginTop: 8 }}>That is more than you have left. Lower a stake, drop a call, or get more points on your profile.</div>}
           </div>
           <div className="panel">
@@ -329,11 +355,11 @@ export default function FillCard() {
       <div className="slip">
         <div className="items">
           {slip.length === 0 && <span className="muted small">{data!.entry ? "Every call removed — save to withdraw from this card." : "No calls yet. Skipping a call costs nothing — a partial card is always valid."}</span>}
-          {slip.map((k) => <span className="item" key={k.call_type}>{k.title}: {pickText(picks[k.call_type]!)} <span className="muted">{stakeOf(k.call_type)} →</span> <b>{payout(k)}</b>{editable && <button onClick={() => set(k.call_type, null)} title="Remove">×</button>}</span>)}
+          {slip.map((k) => <span className="item" key={k.call_type}>{k.title}: {pickText(picks[k.call_type]!)} <span className="muted">{stakeOf(k.call_type)} →</span> <b>{payout(k) == null ? "?" : pts(payout(k))}</b>{editable && <button onClick={() => set(k.call_type, null)} title="Remove">×</button>}</span>)}
         </div>
         <div style={{ textAlign: "right" }}>
-          <div className="total" key={toWin}>{toWin}</div>
-          <div className="tiny muted">{staked} staked</div>
+          <div className="total" key={toWin}>{pts(toWin)}</div>
+          <div className="tiny muted">{staked} staked · at today's split</div>
         </div>
         {editable ? (
           <button className="btn big" disabled={saving || overdrawn || (slip.length === 0 && !data!.entry)} onClick={save}>

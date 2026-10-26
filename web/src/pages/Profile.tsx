@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { claimPrize, myHistory, myLedger, myStats, type HistoryCall, type HistoryCard, type LedgerRow } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
 import { ago, fmtDay, ord } from "../lib/format";
+import { pts as fmtPts, signedPts } from "../lib/calls";
 import { AdModal, Bar, ErrorBox, Spinner } from "../components/ui";
 
 const STATE: Record<HistoryCall["result"], { label: string; cls: string }> = {
@@ -15,9 +16,9 @@ const STATE: Record<HistoryCall["result"], { label: string; cls: string }> = {
 };
 
 const REASON: Record<LedgerRow["reason"], string> = {
-  signup: "Starting points", stake: "Staked at kick-off", win: "A call landed",
+  signup: "Season start", adjustment: "Adjustment", stake: "Staked at kick-off",
+  pot: "A share of a pot", jackpot: "A share of a jackpot",
   refund: "A void call, handed back", ad_reward: "Watched an ad", prize: "Prize",
-  jackpot: "A share of a jackpot",
 };
 
 export default function Profile() {
@@ -50,16 +51,16 @@ export default function Profile() {
           <h1 className="display" style={{ margin: "6px 0 10px" }}>{profile?.display_name ?? "Player"}</h1>
           <div className="muted">{s.rank ? `${ord(s.rank)} of ${s.players} overall.` : "No settled cards yet — the first full time puts you on the table."} <Link to="/settings" className="lime small">Settings</Link></div>
           <div className="tiles" style={{ marginTop: 16 }}>
-            <div className="tile"><div className="v">{balance.toLocaleString()}</div><div className="k">Points held</div></div>
+            <div className="tile"><div className="v">{fmtPts(balance)}</div><div className="k">Points held</div></div>
             <div className="tile"><div className="v">{s.rank ? ord(s.rank) : "–"}</div><div className="k">Overall</div></div>
             <div className="tile"><div className="v">{s.cards}</div><div className="k">Cards</div></div>
             <div className="tile"><div className="v">{s.hit_rate}%</div><div className="k">Hit rate</div></div>
           </div>
           <div className="small muted" style={{ marginTop: 12 }}>
             {s.committed > 0
-              ? <>{s.committed.toLocaleString()} of that is promised to cards that have not kicked off yet.</>
+              ? <>{fmtPts(s.committed)} of that is promised to cards that have not kicked off yet.</>
               : <>Nothing is promised to an open card right now.</>}
-            {" "}Across every settled card you are {s.points > 0 ? "up" : s.points < 0 ? "down" : "level"} {Math.abs(s.points).toLocaleString()}.
+            {" "}Across every settled card you are {s.points > 0 ? "up" : s.points < 0 ? "down" : "level"} {fmtPts(Math.abs(s.points))}.
           </div>
         </div>
 
@@ -69,24 +70,25 @@ export default function Profile() {
             <span className="tiny muted">{s.ads_left} of 10 left today</span>
           </div>
           <div className="small muted" style={{ marginBottom: 12 }}>
-            Watch a 30-second ad for 100 points. Ten a day, counted by the database and reset at midnight UTC.
+            Watch a 30-second ad for {fmtPts(s.ad_reward)} points. Ten a day, counted by the database and reset at
+            midnight UTC. It is a trickle on purpose: the points worth having come out of the pots.
           </div>
           <button className="btn big" disabled={!s.ads_enabled || s.ads_left <= 0} onClick={() => setAds(true)}>
-            {!s.ads_enabled ? "Switched off right now" : s.ads_left > 0 ? "Watch an ad · +100" : "Back tomorrow"}
+            {!s.ads_enabled ? "Switched off right now" : s.ads_left > 0 ? `Watch an ad · +${fmtPts(s.ad_reward)}` : "Back tomorrow"}
           </button>
         </div>
 
         <div className="panel">
           <div className="eyebrow" style={{ marginBottom: 10 }}>The PlayStation 5</div>
           <div className="row-of" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-            <span className="num lime" style={{ fontSize: 34 }}>{balance.toLocaleString()}</span>
+            <span className="num lime" style={{ fontSize: 34 }}>{fmtPts(balance)}</span>
             <span className="small muted">of {s.prize_target.toLocaleString()}</span>
           </div>
           <div className="prize-bar" aria-label={`${Math.floor(pct)}% of the way to a PlayStation 5`}><i style={{ width: `${Math.max(0.6, pct)}%` }} /></div>
           <div className="small muted" style={{ marginTop: 8 }}>
             {balance >= s.prize_target
               ? "You are there. Claim it and we will be in touch by email."
-              : `${(s.prize_target - balance).toLocaleString()} to go. Reach a million points and the console is yours.`}
+              : `${fmtPts(s.prize_target - balance)} to go. Reach a million points and the console is yours.`}
           </div>
           {s.prize_claim?.status === "pending" ? (
             <div className="banner ok" style={{ marginTop: 12, marginBottom: 0 }} role="status"><b>Claim received.</b> Filed {ago(s.prize_claim.created_at)} ago — we handle these by hand and will email you.</div>
@@ -113,7 +115,7 @@ export default function Profile() {
           {ledger.map((l, i) => (
             <div key={i} className="small" style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", borderBottom: "1px solid var(--raise)" }}>
               <span className="muted">{REASON[l.reason]}<span className="tiny faint" style={{ marginLeft: 6 }}>{ago(l.created_at)}</span></span>
-              <b style={{ color: l.amount > 0 ? "var(--lime)" : "var(--magenta)" }}>{l.amount > 0 ? `+${l.amount}` : l.amount}</b>
+              <b style={{ color: l.amount > 0 ? "var(--lime)" : "var(--magenta)" }}>{signedPts(Number(l.amount))}</b>
             </div>
           ))}
         </div>
@@ -151,7 +153,7 @@ function HistoryRow({ h }: { h: HistoryCard }) {
           <b>{h.home}</b> <span className="num lime">{score}</span> <b>{h.away}</b>
           <span className="tiny muted hist-sub">{h.competition} · {fmtDay(h.utc_date)}{h.crew ? ` · ${h.crew}` : ""} · {settled ? `${landed} of ${h.calls.length} landed` : h.card_status === "open" ? "card still open" : "not settled yet"}</span>
         </span>
-        <span className="num hist-pts" style={{ color: h.points > 0 ? "var(--lime)" : "#4a4a44" }}>{h.points > 0 ? `+${h.points}` : settled ? "0" : "—"}</span>
+        <span className="num hist-pts" style={{ color: h.points > 0 ? "var(--lime)" : "#4a4a44" }}>{settled ? signedPts(Number(h.points)) : "—"}</span>
         <span className="hist-caret">{open ? "−" : "+"}</span>
       </button>
       {open && (
@@ -161,7 +163,7 @@ function HistoryRow({ h }: { h: HistoryCard }) {
             <div className="hist-call" key={c.call_type}>
               <span className="small"><b>{c.title}</b> <span className="muted">— {c.label}</span></span>
               <span className={STATE[c.result].cls}>{STATE[c.result].label}</span>
-              <span className="num" style={{ textAlign: "right", color: c.result === "hit" ? "var(--lime)" : "#4a4a44" }}>{c.result === "hit" ? `+${c.points}` : "0"}</span>
+              <span className="num" style={{ textAlign: "right", color: c.result === "hit" ? "var(--lime)" : "#4a4a44" }}>{c.result === "hit" ? `+${fmtPts(Number(c.points))}` : "0"}</span>
             </div>
           ))}
           <Link to={`/card/${h.card_id}/live`} className="lime tiny">Open the card →</Link>

@@ -23,10 +23,10 @@ export default function Login() {
   return (
     <div className="login">
       <div className="left">
-        <div className="eyebrow">Free to play · 1,000 points to start</div>
+        <div className="eyebrow">Free to play · 100 points a season</div>
         <h1 className="display" style={{ marginTop: 10 }}>The <span className="lime">Pool</span></h1>
         <p style={{ fontSize: 17, maxWidth: 460, color: "var(--text-2)" }}>
-          Call what will happen in a match and stake points on it. Get it right and your stake comes back multiplied; get it wrong and it is gone. Everyone starts with 1,000. A million buys a PlayStation 5.
+          Call what will happen in a match and stake points on it. Every stake on a call goes into one pot, and at full time the people who were right share it out. Everyone starts a season with 100 points, and nothing is ever minted — what you win, somebody else staked. A million buys a PlayStation 5.
         </p>
         {!sent ? (
           <form onSubmit={send} style={{ maxWidth: 420 }}>
@@ -58,7 +58,8 @@ export default function Login() {
         <div className="small muted stack">
           <div><b style={{ color: "var(--text)" }}>Simple card</b> — the result and the goals line. Two calls, one minute.</div>
           <div><b style={{ color: "var(--text)" }}>Complex card</b> — adds the handicap, the exact scoreline, a goalscorer, an assist, a yellow and a red. Five minutes.</div>
-          <div><b style={{ color: "var(--text)" }}>The stake</b> — 10, 25, 50, 100 or 200 on each call. The draw pays 3×, an exact scoreline 8×, a red card 10× and up.</div>
+          <div><b style={{ color: "var(--text)" }}>The stake</b> — 1, 2, 5, 10, 25 or 50 on each call. The fewer people on your pick, the more of the pot it takes.</div>
+          <div><b style={{ color: "var(--text)" }}>The jackpot</b> — a call nobody lands rolls its pot into the next match in that competition.</div>
         </div>
       </div>
     </div>

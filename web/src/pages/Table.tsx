@@ -1,6 +1,7 @@
 // §5.8 The table: overall, per crew, this week, per competition — with rank movement
 import { useState } from "react";
 import { getCompetitions, getMyCrews, leaderboard } from "../lib/api";
+import { pts as fmtPts, signedPts } from "../lib/calls";
 import { useAuth, useLoad } from "../lib/auth";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 
@@ -43,8 +44,8 @@ export default function Table() {
               <span className="small" style={{ fontWeight: 700 }}>{r.user_id === uid ? "You" : r.display_name ?? "Player"}</span>
               <span className="small muted hide-s">{r.cards} cards</span>
               <span className="small muted hide-s">{r.hit_rate}%</span>
-              <span className="small hide-s" style={{ color: r.points > 0 ? "var(--lime)" : r.points < 0 ? "var(--magenta)" : "var(--soft)" }}>{r.points > 0 ? `+${r.points}` : r.points}</span>
-              <span className="ptsc">{r.balance.toLocaleString()}</span>
+              <span className="small hide-s" style={{ color: r.points > 0 ? "var(--lime)" : r.points < 0 ? "var(--magenta)" : "var(--soft)" }}>{signedPts(Number(r.points))}</span>
+              <span className="ptsc">{fmtPts(r.balance)}</span>
             </div>
           ); })}
         </div>

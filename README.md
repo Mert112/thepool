@@ -27,6 +27,7 @@ tests/                 end-to-end rules test that runs on plain Postgres
 | Explainers, history | `0018` | one plain-English line per call; `call_label()`, `my_history()` |
 | Point economy | `0019` | `profiles.balance`, the append-only `ledger`, stakes on calls, multipliers, rewarded ads, `prize_claims` |
 | The jackpot | `0020` | stakes from 1 point; a call nobody lands rolls its losses forward, less a 10% rake |
+| Pari-mutuel | `0021` | the pot pays, not the house: multipliers gone, nothing minted, money in decimals |
 | Sync | `sync/espn-sync.mjs` | systemd timer, every minute: fixtures a week out (every 30 min), live scoreboards, goals and cards for matches being played, squads for the board, then settlement |
 | Mail | `send-notifications` | drains the queue through Resend |
 
@@ -94,47 +95,57 @@ Caddy serves `thepool.today` and `www.thepool.today` with automatic HTTPS; ports
 | Simple | the result (home / draw / away), over or under the goals line |
 | Complex | adds the handicap, the exact scoreline, a goalscorer, an assist, a yellow and a red |
 
-The red card takes an optional 15-minute window for a far bigger multiplier. Rules: calls that cannot all land are refused (no hedging); a player who never took part is void; a total or handicap landing exactly on the line is a push and is void; the result is 3-way, so a draw beats both sides.
+The red card takes an optional 15-minute window, which narrows the call — fewer people will be right, so the pot splits fewer ways. Rules: calls that cannot all land are refused (no hedging); a player who never took part is void; a total or handicap landing exactly on the line is a push and is void; the result is 3-way, so a draw beats both sides.
 
-## Points are a currency (§4, `0019`)
+## Points are a currency, and the pot is all there is to win
 
-Everyone starts with **1,000 points**. Every call carries a stake the player picks — **1, 2, 5, 10, 25 or 50** — and the stake leaves the balance when the card **locks at kick-off**, not when it is saved. At settlement a call that lands returns `stake × multiplier`, a call that misses returns nothing, and a void call hands the stake back.
+Everyone starts a season with **100 points**. Every call carries a stake the player picks — **1, 2,
+5, 10, 25 or 50** — and the stake leaves the balance when the card **locks at kick-off**, not when it
+is saved. Every stake on a call type goes into **one pot for that card**.
 
-| Call | Multiplier |
-|---|---|
-| The result — a team | 1.5× |
-| The result — the draw | 3× |
-| Over / under the goals line | 2× |
-| The handicap | 2× |
-| The exact scoreline | 8× |
-| A goalscorer | 4× |
-| An assist | 6× |
-| A yellow card | 3× |
-| A red card | 10×, or 35×–120× with a 15-minute window |
+At full time, per pot:
 
-A card cannot stake more than the player holds, counting what other open cards have already promised; the check is in `rpc_save_calls`. If a balance somehow falls short by kick-off the entry is not staked at all and its calls settle void.
+1. a **void** is refunded in full and leaves the pot entirely — no rake is taken on it
+2. the house takes a **10% rake** of what remains, recorded in the ledger
+3. the other 90%, plus any **jackpot** carried in, is split among the correct calls **in proportion
+   to what they staked**, rounded down to the penny
+4. what rounding leaves behind goes into the jackpot, never to the house and never invented
+5. if **nobody** was correct, the whole 90% rolls into the competition's jackpot
 
-**The jackpot (`0020`).** Where nobody lands a call type on a card, the stakes actually lost on it
-— a refunded void never counts — are pooled, the house takes a **10% rake**, and the rest becomes a
-jackpot held per competition per call type. The next card in that competition shows
-`Jackpot: +N points` on the call while it is open, and the first card where somebody does land it
-shares the jackpot among the winners in proportion to what they staked, on top of their multiplier
-payout. Nobody lands it again and that card's pot is added, so it compounds. Shares are floored and
-the rounding remainder stays in the pot rather than being invented.
+So a pick is worth more the fewer people are on it, and being alone in a pot and right still costs
+you the rake. Before lock, each option shows what one point on it would return at the split as it
+stands, and each call shows the pot and any jackpot riding on it.
 
-A card's part in the jackpot is **decided once**, the first time it settles final, and recorded in
-`jackpot_moves` — zero movements included. That matters: a jackpot is a sequence across cards in
-time, so without it a card re-settled after a provider correction would be judged against today's
-jackpot and could scoop a pot a *later* card had rolled in. A correction still re-scores the card
-and adjusts the multiplier payouts through the ledger; it never moves the jackpot.
+**Nothing is minted.** A balance can rise exactly four ways: the 100-point season start, a **0.5**
+point ad credit, a share of a pot, and a share of a jackpot. Everything else is players' money
+moving between players, or the rake leaving for the house. Money is `numeric(14,2)` throughout,
+because half a point is a real amount.
 
-**The ledger.** Every movement is one row in `pool.ledger` (`user_id`, signed `amount`, `reason`, `reference`), written only by `SECURITY DEFINER` functions; a trigger refuses any update or delete, and no role has a write grant on it or on `profiles.balance`. `apply_ledger()` is idempotent per `(reason, reference)` — it writes the difference between what a reason has already paid and what it should have — so a provider correction adjusts a balance instead of paying twice. The running sum of a player's rows is always their balance; the tests assert it.
+**The jackpot (`0020`).** Held per competition per call type. The next card in that competition
+shows `Jackpot: +N points` on the call while it is open. A card's part in the jackpot is **decided
+once**, the first time it settles final, and recorded in `jackpot_moves` — zero movements included,
+because a jackpot is a sequence across cards in time and a card re-judged later could otherwise
+scoop a pot a *later* card had rolled in.
 
-**Getting points.** A "Get points" button plays a 30-second rewarded-video placeholder worth **100 points**, up to **ten a day**. The cap is structural: `ad_views` is keyed on `(user_id, day, seq)` with `check (seq between 1 and 10)`, so an eleventh row cannot exist and two racing calls cannot take the same slot. `app_flags.rewarded_ads` switches the whole thing off. Swap the panel in `AdModal` for a real provider's player; nothing else moves.
+**The ledger.** `pool.ledger` (`user_id`, signed `amount`, `reason`, `reference`) is append-only: a
+trigger refuses every update and delete, no role holds a write grant on it or on `profiles.balance`,
+and only `SECURITY DEFINER` functions move money. The house's rake is a ledger row with no user.
+`apply_ledger()` is idempotent per `(reason, reference)`, so a provider correction adjusts rather
+than paying twice. An entry's own number is read back out of the ledger, so a card's total can never
+disagree with the balance it moved.
 
-**The prize.** A balance of 1,000,000 can claim a PlayStation 5: `rpc_claim_prize()` writes a row to `prize_claims` for us to handle by hand. The profile page shows the progress bar and the claim button. Claiming does not spend the balance — we settle that when we fulfil it.
+The conservation law — `balances + house + jackpots + stakes still riding = everything ever
+credited` — is asserted after every scenario in `tests/economy_test.sql` and `tests/jackpot_test.sql`.
 
-**Leaderboards** rank by balance overall, and by what was won in scope for a crew, a week or a competition.
+**Getting points.** A "Get points" button plays a 30-second rewarded-video placeholder worth **0.5
+points**, up to **ten a day**. The cap is structural: `ad_views` is keyed on `(user_id, day, seq)`
+with `check (seq between 1 and 10)`. `app_flags.rewarded_ads` switches it off.
+
+**The prize.** A balance of 1,000,000 can claim a PlayStation 5: `rpc_claim_prize()` writes a row to
+`prize_claims` for us to handle by hand.
+
+**Leaderboards** rank by balance overall, and by what was won in scope for a crew, a week or a
+competition. In a zero-sum game the player who never played can lead, which is the honest answer.
 
 ## ESPN sync
 ```

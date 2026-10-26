@@ -4,6 +4,7 @@ import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
 import { initials, dateline } from "../lib/format";
+import { pts as fmtPts } from "../lib/calls";
 import { getFlag, setDisplayName, watchAd } from "../lib/api";
 
 export const AD_SECONDS = 30;
@@ -60,7 +61,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {items.map(([to, label]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "on" : "")}>{label}</NavLink>)}
         </nav>
         <div className="me">
-          {profile && <Link to="/you" title="Your points"><span className="pts">{profile.balance.toLocaleString()}</span> <span className="tiny">pts</span></Link>}
+          {profile && <Link to="/you" title="Your points"><span className="pts">{fmtPts(profile.balance)}</span> <span className="tiny">pts</span></Link>}
           {adsOn && <button className="btn ghost tiny-btn" onClick={() => setAds(true)}>Get points</button>}
           {profile && profile.streak > 0 && <span className="tag hit">{profile.streak}-day streak</span>}
           <Link to="/settings" title="Settings"><Avatar name={profile?.display_name} me /></Link>
@@ -121,7 +122,7 @@ export function AdModal({ onClose, onCredited }: { onClose: () => void; onCredit
     <Modal title="Get points" onClose={onClose}>
       {done ? (
         <div>
-          <div className="banner ok" role="status"><b>+{done.credited} points.</b> {done.left_today > 0 ? `${done.left_today} more ${done.left_today === 1 ? "ad" : "ads"} today.` : "That is all ten for today."}</div>
+          <div className="banner ok" role="status"><b>+{fmtPts(done.credited)} points.</b> {done.left_today > 0 ? `${done.left_today} more ${done.left_today === 1 ? "ad" : "ads"} today.` : "That is all ten for today."}</div>
           <div className="row-of">
             <button className="btn big" onClick={onClose}>Done</button>
             {done.left_today > 0 && <button className="btn" onClick={() => { setDone(null); setLeft(AD_SECONDS); }}>Watch another</button>}
@@ -132,13 +133,13 @@ export function AdModal({ onClose, onCredited }: { onClose: () => void; onCredit
           <div className="ad-stub">
             <div className="eyebrow">Advertisement · placeholder</div>
             <div className="num lime ad-count">{left}</div>
-            <div className="small muted">{left > 0 ? "Watch to the end to collect 100 points." : "Finished. Collect your points."}</div>
+            <div className="small muted">{left > 0 ? "Watch to the end to collect half a point." : "Finished. Collect your points."}</div>
             <div className="ad-progress"><i style={{ width: `${((AD_SECONDS - left) / AD_SECONDS) * 100}%` }} /></div>
           </div>
-          <p className="tiny muted">A real rewarded-video player goes here. Until then this is a 30-second stand-in: the reward, and the ten-a-day limit, are counted in the database either way.</p>
+          <p className="tiny muted">A real rewarded-video player goes here. Until then this is a 30-second stand-in: the reward, and the ten-a-day limit, are counted in the database either way. Ads are a trickle by design — the points worth having come out of the pots.</p>
           <ErrorBox msg={err} />
           <button className="btn big" disabled={left > 0 || busy} onClick={collect}>
-            {busy ? "Collecting…" : left > 0 ? `Collect 100 points in ${left}s` : "Collect 100 points"}
+            {busy ? "Collecting…" : left > 0 ? `Collect 0.5 points in ${left}s` : "Collect 0.5 points"}
           </button>
         </div>
       )}

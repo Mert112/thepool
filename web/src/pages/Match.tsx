@@ -6,7 +6,7 @@ import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, plural, soon } from "../lib/format";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 import { CreateCardDialog } from "./Board";
-import { multiplierRange, offered } from "../lib/calls";
+import { offered, pts } from "../lib/calls";
 
 export default function Match() {
   const { id } = useParams();
@@ -92,7 +92,7 @@ export default function Match() {
 
         {card && (
           <div className="panel">
-            <div className="eyebrow" style={{ marginBottom: 12 }}>The calls · what each returns per point staked · what the pool has called</div>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>The calls · any jackpot carried in · what the pool has called</div>
             {shown.map((k) => {
               const t = topCrowd(k.call_type);
               return (
@@ -102,7 +102,7 @@ export default function Match() {
                     {upcoming && !!jackpots[k.call_type] && <div className="jackpot">Jackpot: +{jackpots[k.call_type]!.toLocaleString()} points</div>}
                     <div className="tiny muted explainer">{k.explainer}</div>
                   </div>
-                  <div className="num lime" style={{ fontSize: 20, whiteSpace: "nowrap" }}>{multiplierRange(k)}</div>
+                  <div className="num lime" style={{ fontSize: 20, whiteSpace: "nowrap" }}>{jackpots[k.call_type] ? `+${pts(jackpots[k.call_type])}` : "—"}</div>
                   <div className="small muted">{t ? <span>{t.pct}% · {t.label}</span> : <span className="faint">no calls yet</span>}</div>
                 </div>
               );

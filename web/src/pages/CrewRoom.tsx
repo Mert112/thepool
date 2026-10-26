@@ -5,6 +5,7 @@ import { challengeCrew, crewScore, getMatches, getCrew, getCrewCards, getCrewInv
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { ago, countdown, plural } from "../lib/format";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
+import { pts as fmtPts } from "../lib/calls";
 
 export default function CrewRoom() {
   const { id } = useParams();
@@ -91,7 +92,7 @@ export default function CrewRoom() {
               <span className="small">{nameOf(r.user_id)} {i === 0 && <span className="tag solid" style={{ marginLeft: 6 }}>Leader</span>}</span>
               <span className="small muted hide-s">{r.cards} cards</span>
               <span className="small muted hide-s">{r.hit_rate}%</span>
-              <span className="ptsc">{r.points}</span>
+              <span className="ptsc">{fmtPts(Number(r.points))}</span>
             </div>
           ))}
           {members.filter((m) => !table.some((r) => r.user_id === m.user_id)).map((m) => (
@@ -135,7 +136,7 @@ export default function CrewRoom() {
               <div>
                 <span className="who">{nameOf(p.user_id)}</span><span className="when">{ago(p.created_at)}</span>
                 {p.body && <div className="small">{p.body}</div>}
-                {p.calls && <div className="receipt">Called {markets.find((k) => k.call_type === p.calls!.call_type)?.short ?? p.calls.call_type} · +{p.calls.points_awarded}</div>}
+                {p.calls && <div className="receipt">Called {markets.find((k) => k.call_type === p.calls!.call_type)?.short ?? p.calls.call_type} · +{fmtPts(Number(p.calls.points_awarded))}</div>}
               </div>
             </div>
           ))}

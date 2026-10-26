@@ -26,17 +26,13 @@ export const spreadFor = (m: BoardRow, team: number | null | undefined) => { con
 export const offered = (k: Market, m: BoardRow) =>
   k.call_type === "total" ? lineOf(m) != null : k.call_type === "spread" ? m.odds?.spread?.home_line != null : true;
 
-// What a call pays back, per point staked (mirrors pool.call_multiplier). The draw has its own
-// multiplier on the 3-way result, and a narrower call — the red card's 15-minute window — scales it.
-export function multiplierOf(k: Market, pick?: string | null): number {
-  if (pick && k.pick_multiplier?.[pick] != null) return k.pick_multiplier[pick];
-  return k.multiplier * (pick ? k.option_mult?.[pick] ?? 1 : 1);
-}
-// a saved call keeps the multiplier it was taken at
-export const multiplierOfCall = (k: Market, c: Call) => c.multiplier ?? multiplierOf(k, c.pick);
-// a landed call returns the stake times the multiplier
-export const returnOf = (stake: number, multiplier: number) => Math.round(stake * multiplier);
-export const fmtMult = (m: number) => `${Number(m.toFixed(2))}×`;
+// Points carry halves now, so they are written to two places and trimmed: 100, 90.7, 2.31.
+export const pts = (n: number | null | undefined) =>
+  n == null ? "—" : (Math.round(Number(n) * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+export const signedPts = (n: number) => (n > 0 ? `+${pts(n)}` : pts(n));
+// what a pick returns per point staked, at the split as it stands
+export const perPoint = (purse: number, pickStake: number) =>
+  pickStake > 0 ? Math.floor((purse / pickStake) * 100) / 100 : null;
 
 export const squadOf = (squads: Player[], teamId: number) => squads.filter((p) => p.team_id === teamId);
 
@@ -57,10 +53,4 @@ export function clashes(a: Call, b: Call, m: BoardRow): boolean {
   return false;
 }
 
-// what a market pays per point staked: one multiplier, or the range across its options
-export function multiplierRange(k: Market): string {
-  const picks: Array<string | null> = [null, ...Object.keys(k.pick_multiplier ?? {}), ...Object.keys(k.option_mult ?? {})];
-  const ms = picks.map((p) => multiplierOf(k, p));
-  const lo = Math.min(...ms), hi = Math.max(...ms);
-  return lo === hi ? fmtMult(lo) : `${Number(lo.toFixed(2))}–${fmtMult(hi)}`;
-}
+

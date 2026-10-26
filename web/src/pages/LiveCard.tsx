@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { getCard, getCrewPosts, getEntries, getEvents, getMarkets, getMatch, getSquads, post, type Call, type Entry } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
 import { ago, ord, plural } from "../lib/format";
-import { fmtMult, liveClock, offered, pickText as describe, multiplierOfCall, returnOf } from "../lib/calls";
+import { liveClock, offered, pickText as describe, pts, signedPts } from "../lib/calls";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 
 export default function LiveCard() {
@@ -66,7 +66,7 @@ export default function LiveCard() {
           <div className="brag">
             <div className="eyebrow" style={{ color: "#3a3a35" }}>Your receipt</div>
             <div className="display">{bestMarket ? `I called ${bestMarket.short}` : "Nothing landed"}</div>
-            <div style={{ marginTop: 6 }}>{bestMarket ? `${mine.points > 0 ? "+" : ""}${plural(mine.points, "point")}, ${ord(myPos)} of ${entries.length} on this card.` : `Blank card — ${myStaked} points gone. It happens.`}</div>
+            <div style={{ marginTop: 6 }}>{bestMarket ? `${signedPts(mine.points)} points, ${ord(myPos)} of ${entries.length} on this card.` : `Blank card — ${pts(myStaked)} points gone. It happens.`}</div>
           </div>
         )}
 
@@ -81,13 +81,13 @@ export default function LiveCard() {
               <div key={k.call_type} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto 60px", gap: 12, alignItems: "center", padding: "9px 0", borderBottom: "1px solid var(--raise)" }}>
                 <div>
                   <div className="small" style={{ fontWeight: 700 }}>{k.title}</div>
-                  <div className="tiny muted">{label}{c ? ` · ${c.stake} at ${fmtMult(multiplierOfCall(k, c))}` : ""}</div>
+                  <div className="tiny muted">{label}{c ? ` · ${c.stake} staked` : ""}</div>
                 </div>
                 <span className={cls}>{st}</span>
                 <div className="num" style={{ fontSize: 17, textAlign: "right", color: st === "Hit" ? "var(--lime)" : "#4a4a44" }} title={c && st !== "Hit" && st !== "Missed" && st !== "Void" ? "returns this if it lands" : undefined}>
-                  {st === "Hit" ? `+${c!.points_awarded}`
+                  {st === "Hit" ? (c!.points_awarded ? `+${pts(c!.points_awarded)}` : <span className="faint">pot pending</span>)
                     : st === "Void" ? <span className="faint">{c!.staked ? `${c!.stake} back` : "—"}</span>
-                    : c && (st === "Open" || st === "Running") ? <span className="faint">{returnOf(c.stake ?? 0, multiplierOfCall(k, c))}</span> : "0"}
+                    : "0"}
                 </div>
               </div>
             );
@@ -97,11 +97,11 @@ export default function LiveCard() {
               <div style={{ display: "flex", justifyContent: "space-between" }}><span className="muted small">Staked at kick-off</span><span className="num" style={{ fontSize: 20, color: "var(--soft)" }}>{myStaked || "—"}</span></div>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
                 <span className="muted small">{settled ? "This card, all in" : "This card so far"}</span>
-                <span className="num" style={{ fontSize: 28, color: mine.points >= 0 ? "var(--lime)" : "var(--magenta)" }}>{mine.points > 0 ? `+${mine.points}` : mine.points}</span>
+                <span className="num" style={{ fontSize: 28, color: mine.points >= 0 ? "var(--lime)" : "var(--magenta)" }}>{signedPts(mine.points)}</span>
               </div>
             </div>
           )}
-          {mine && live && <div className="tiny muted" style={{ marginTop: 6 }}>Result calls (the result, the goals line, the handicap, the scoreline) stay open until full time even if they look right now. Your stakes have already left your balance.</div>}
+          {mine && live && <div className="tiny muted" style={{ marginTop: 6 }}>Result calls stay open until full time even if they look right now, and no pot pays until it closes — what a landed call is worth depends on who else landed it.</div>}
         </div>
 
         <div className="panel">
@@ -127,7 +127,7 @@ export default function LiveCard() {
               <span className="pos">{i + 1}</span>
               <Avatar name={e.profiles?.display_name} me={e.user_id === uid} />
               <span style={{ flex: 1 }} className="small">{e.user_id === uid ? "You" : e.profiles?.display_name ?? "Player"}<span className="tiny muted" style={{ marginLeft: 8 }}>{e.hits} of {e.calls.length}</span></span>
-              <span className="num" style={{ fontSize: 20, color: e.points >= 0 ? "var(--lime)" : "var(--magenta)" }}>{e.points > 0 ? `+${e.points}` : e.points}</span>
+              <span className="num" style={{ fontSize: 20, color: e.points >= 0 ? "var(--lime)" : "var(--magenta)" }}>{signedPts(e.points)}</span>
             </div>
           ))}
         </div>
