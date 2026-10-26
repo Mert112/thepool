@@ -119,8 +119,18 @@ update calls k set multiplier = call_multiplier(mk, k.pick)
 from entries e, cards cd, matches m, markets mk
 where k.entry_id = e.id and e.card_id = cd.id and cd.match_id = m.id and mk.call_type = k.call_type;
 alter table calls alter column multiplier set not null;
--- cards already locked keep their old free-points settlement; nothing historical is re-banked
+-- cards already locked keep their old free-points settlement; nothing historical is re-banked.
+-- sync_card_status only ever locks an *open* card, so take_stakes never reaches them and no money
+-- moves on their behalf — but settlement still can, so the economy records when it began and both
+-- score_call and process_match_updates leave anything older alone.
 update calls k set staked = false;
+
+create table economy (started_at timestamptz primary key);
+insert into economy values (now());
+create or replace function economy_start() returns timestamptz
+language sql stable security definer set search_path = pool, public, extensions as $$
+  select started_at from economy
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 4. The boost retires with the old economy
@@ -370,8 +380,9 @@ declare
   ev boolean; has_stats boolean; played boolean;
   total int; cover numeric;
 begin
-  -- a call whose stake was never covered at kick-off cannot win or lose
-  if not c.staked and m.utc_date <= now() then
+  -- a call whose stake was never covered at kick-off cannot win or lose. Calls made before the
+  -- economy began carry no stake by definition and are judged as they always were.
+  if not c.staked and c.created_at >= economy_start() and m.utc_date <= now() then
     result := 'void'; points := 0; return next; return;
   end if;
 
@@ -467,9 +478,10 @@ begin
       update calls set result = sc.result, points_awarded = sc.points,
              settled_at = case when sc.result = 'pending' then null else now() end
        where id = (rec.call).id;
+      -- the money only moves when the call does; every other pass leaves the ledger alone
+      perform sync_call_money((rec.call).id);
       n_calls := n_calls + 1;
     end if;
-    perform sync_call_money((rec.call).id);
   end loop;
 
   -- 2. entries. points is now net: everything that came back — winnings and refunded stakes —
@@ -531,6 +543,28 @@ begin
    where id = p_match;
 
   return query select n_calls, n_entries;
+end $$;
+
+-- A match that settled under the old free-points model is left where it is: re-scoring it would
+-- judge calls by stakes they never carried and move balances for a card nobody paid into.
+create or replace function process_match_updates() returns void
+language plpgsql security definer set search_path = pool, public, extensions as $$
+declare r record;
+begin
+  perform sync_card_status();
+  for r in select id, status, settled_at, provider_updated from matches
+            where utc_date > now() - interval '7 days'
+              and ((status in ('IN_PLAY', 'PAUSED', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'))
+               or (status in ('FINISHED', 'AWARDED') and (settled_at is null or provider_updated > settled_at)))
+  loop
+    if r.status in ('IN_PLAY', 'PAUSED', 'EXTRA_TIME', 'PENALTY_SHOOTOUT') then
+      perform settle_match(r.id, false);
+    elsif r.settled_at is null then
+      perform settle_match(r.id, true);
+    elsif r.settled_at >= economy_start() then
+      perform resettle_match(r.id);
+    end if;
+  end loop;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -676,7 +710,8 @@ create or replace function my_stats(p_season text default null)
 returns jsonb language plpgsql stable security definer set search_path = pool, public, extensions as $$
 declare u uuid := auth.uid(); res jsonb;
 begin
-  with lb as (select *, row_number() over () as rank from leaderboard('overall', null, p_season)),
+  with lb as (select *, row_number() over (order by balance desc, points desc, display_name) as rank
+              from leaderboard('overall', null, p_season)),
   me as (select * from lb where user_id = u),
   comps as (
     select cp.code, cp.name, x.points, x.rank from competitions cp
@@ -719,6 +754,7 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 12. Access. The client reads balances; only these functions write them.
 -- ---------------------------------------------------------------------------
+alter table economy      enable row level security;
 alter table ledger       enable row level security;
 alter table ad_views     enable row level security;
 alter table prize_claims enable row level security;
@@ -732,6 +768,7 @@ create policy "public read" on app_flags    for select using (true);
 create policy "public read" on stakes       for select using (true);
 
 grant select on ledger, ad_views, prize_claims to authenticated;
+grant all on economy to service_role;
 grant select on app_flags, stakes to anon, authenticated;
 grant all on ledger, ad_views, prize_claims, app_flags, stakes to service_role;
 grant usage, select on sequence ledger_id_seq to service_role;
@@ -740,11 +777,13 @@ grant select (balance) on profiles to authenticated;
 
 revoke execute on function apply_ledger(uuid, text, text, int), sync_call_money(uuid),
   take_stakes(uuid), release_stakes(uuid), call_multiplier(markets, text), committed_stake(uuid, uuid),
-  score_call(calls, matches), settle_match(int, boolean), sync_card_status()
+  score_call(calls, matches), settle_match(int, boolean), sync_card_status(), economy_start(),
+  process_match_updates()
   from public, anon, authenticated;
 grant execute on function apply_ledger(uuid, text, text, int), sync_call_money(uuid),
   take_stakes(uuid), release_stakes(uuid), call_multiplier(markets, text), committed_stake(uuid, uuid),
-  score_call(calls, matches), settle_match(int, boolean), sync_card_status()
+  score_call(calls, matches), settle_match(int, boolean), sync_card_status(), economy_start(),
+  process_match_updates()
   to service_role;
 grant execute on function rpc_watch_ad(), rpc_claim_prize(), ads_today(uuid), my_ledger(int), my_committed_stake() to authenticated;
 grant execute on function leaderboard(text, text, text), my_stats(text) to authenticated;

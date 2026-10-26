@@ -289,6 +289,23 @@ do $$ declare claim uuid; begin
   perform test_reset();
 end $$;
 
+-- --- 14b. cards settled before the economy began are left exactly where they are -----------------
+-- (nothing in a fresh database predates it, so the clock is wound back to make one)
+insert into matches (id, competition_code, sport, season, utc_date, status, home_team_id, away_team_id, odds) values
+  (9900, 'PL', 'soccer', '2026', now() + interval '2 hours', 'TIMED', 9001, 9002, '{}');
+select play(:'B', 9900, '[{"call_type":"winner","team_id":9001,"stake":50}]');
+do $$ declare before int := bal('22222222-bbbb-0000-0000-000000000002'); begin
+  -- it locked and settled under the old free-points model: no stake was ever taken
+  update cards set status = 'settled', locked_at = now() - interval '4 hours', settled_at = now() - interval '3 hours' where match_id = 9900;
+  update matches set status = 'FINISHED', utc_date = now() - interval '4 hours', home_score = 2, away_score = 0,
+         settled_at = now() - interval '3 hours', provider_updated = now() where id = 9900;
+  update economy set started_at = now() - interval '1 hour';
+  perform process_match_updates();
+  assert res('22222222-bbbb-0000-0000-000000000002', 9900, 'winner') = 'pending', 'an old card is not re-scored';
+  assert bal('22222222-bbbb-0000-0000-000000000002') = before, 'and no money moves on it';
+  update economy set started_at = now() - interval '1 day';
+end $$;
+
 -- --- 15. the table ranks by balance ---------------------------------------------------------------
 do $$ begin
   perform test_as('11111111-aaaa-0000-0000-000000000001');
