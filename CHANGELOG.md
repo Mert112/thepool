@@ -1,5 +1,113 @@
 # Changelog
 
+## 2026-10-26 — one provider
+
+Migration `0024_api_football.sql`, a new `sync/api-football.mjs`, and `sync/espn-sync.mjs` gone.
+`bash tests/run.sh` runs seven SQL suites and two browser/parser suites. Backed up first to
+`/root/thepool-backup-20261026-provider/` — this migration rewrites the identity of rows people
+are playing, so the 640 settled matches, 105 calls and 13 ledger rows are in there verbatim.
+
+### Why it is cheaper, not just different
+
+ESPN's feeds were public, unofficial and free, and the design bent around them: a scoreboard read
+one day at a time per competition, bookings that only arrived after full time, squads missing for
+half the board. API-Football is a paid contract, and `/fixtures?ids=a-b-c` returns **twenty full
+fixture details — score, events and line-ups — in one response**. That single fact is what makes
+a minute-by-minute live sync affordable, and the whole request plan follows from it.
+
+| Pass | When | Requests |
+|---|---|---|
+| League catalogue | weekly | 1, for ~1,250 leagues |
+| Fixtures | daily, −2 to +8 days | 1 per followed competition |
+| Squads | daily | 1 per team with a fixture on the board |
+| Odds | once per fixture, retried after 6h | 1 per fixture |
+| **Live** | **every minute** | **1 per 20 in-play fixtures that have a card on them** |
+| Results | once, after the whistle | 1 per 20 fixtures |
+
+**An idle minute costs nothing.** A match nobody is playing never gets a live pass — only one
+results check at full time, which is exactly what the brief asked for and also what keeps the
+day inside its budget.
+
+### The budget is the database's
+
+`config.football_api` holds the ceiling (7,000 against the plan's hard 7,500) and `api_usage`
+keeps a row per UTC day, counted by endpoint. The sync calls `api_take(n, kind)` **before** it
+spends, and a call it cannot afford is not made. A counter inside the script would reset every
+time systemd restarted it, which is most of the point.
+
+This caught a real leak within a minute of going live. The first timer pass spent **8 requests on
+odds and learned nothing** — a fixture nobody has priced yet is the normal case the day before,
+and the pass was asking again every sixty seconds. Eight a minute is 11,520 a day against a
+budget of 7,000. `matches.odds_checked_at` now records the asking, not just the answer, and the
+fixture is left alone for six hours. An idle pass went from 8 requests to 0.
+
+### Competitions: twelve, plus two national sides
+
+All ~1,250 leagues and cups are loaded into `competitions` with their country and type. Only what
+somebody follows is `active`, and only active competitions cost requests. A new account follows:
+
+> Süper Lig · 1. Lig · Türkiye Kupası · Bulgarian First League · Champions League · Europa League
+> · Conference League · Premier League · La Liga · Serie A · Bundesliga · Ligue 1
+
+plus **Türkiye's and Bulgaria's national-team matches** — the World Cup and Euro qualifiers, the
+Nations League, and the two finals. Those five are followed through `competitions.team_filter`,
+which pins them to team ids 777 and 1103: a World Cup qualifying group has fifty other fixtures
+in it and none of them belong on this board, nor should they cost a request. Everything else is
+under **More leagues**, on the board and in settings, browsable by country.
+
+`tier` is set by hand for the competitions we follow and left null for the rest: **the provider
+does not publish a tier**, and guessing one for 1,250 leagues would be inventing data. Competition
+names stay as the provider gives them, like team and player names.
+
+### A call nobody can judge is void, not a miss
+
+The old rule scored a goalscorer call a **miss** when a match had no event data — the stake was
+lost on a call nobody could say was wrong. `matches.detail_at` now records when the provider last
+handed over a fixture's events and line-ups, and at full time without it the player calls are
+voided and the stakes handed back.
+
+`detail_at` is stamped by the writes themselves, through a trigger on `match_events` and
+`player_stats`, rather than by the caller. A sync that forgot to set it would quietly turn every
+judgeable call into a void, and that is not a failure anyone would notice quickly.
+
+Everything settled before this keeps its verdict: 640 matches were backfilled so a rule change
+cannot re-judge a match that has already been paid out.
+
+### Mapping off ESPN, without re-keying anything
+
+`teams.espn_key`, `players.id` and `matches.espn_key` are ESPN's, and the settled history hangs
+off them. Nothing was re-keyed. `af_id` / `af_fixture_id` were added alongside, and the sync
+claims an existing row by name within its competition — accents, case and the `FC`/`SC`/`AC`
+noise ignored — before creating a new one. On the first pass: **67 matches and 87 teams claimed,
+1,794 players mapped, 713 settled matches left exactly as they were**, and no duplicate fixture
+or duplicate team name anywhere in the board's window.
+
+`players.id` was the provider's own id, which stops working the moment the provider changes. It
+now has a sequence starting clear of every existing row, so a new player gets an id of ours.
+
+### Also
+
+- Odds come from the provider's book: the three-way price, a goals line and an Asian handicap.
+  **Quarter lines (-1.25) are refused** — they split a stake in half in real betting and have no
+  meaning in a pot — and the main line is the one the two sides price closest together.
+- `api_usage` was readable by anyone for about four minutes after it went in: the schema's
+  default privileges grant select on a new table to `anon` (0003), the same gap that caught the
+  icons tables in `0022`. It is behind RLS now, and `tests/provider_test.sql` asserts it — so the
+  next new table that forgets is caught by the suite rather than by a curl.
+- `tests/provider_test.mjs` runs the parsers against **responses API-Football actually sent**,
+  kept in `tests/fixtures/api-football.json`: the 90-minute rule, extra time and penalties, every
+  status code mapping to a real `match_status`, events, line-ups, the line-up fallback for
+  leagues without them, odds, and the cross-provider name matching.
+
+### Verified in production
+
+Twelve of twelve fingerprints match the locally-migrated database. First live pass: 1,249 leagues
+catalogued, 195 fixtures across 17 followed competitions, 34 results checked, 40 squads, 7 priced
+— 75 requests, 6,904 left for the day. The timer now runs `api-football.mjs`, and an idle pass
+costs 0 requests.
+
+---
+
 ## 2026-10-26 — three languages
 
 Migration `0023_languages.sql`. `bash tests/run.sh` rebuilds a local Postgres from every

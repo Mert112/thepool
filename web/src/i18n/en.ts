@@ -437,6 +437,25 @@ export const en = {
     theJackpotIs: " — a call nobody lands rolls its pot into the next match in that competition.",
   },
 
+  leagues: {
+    more: "More leagues",
+    title: "Competitions",
+    blurb: "The board shows the competitions you follow. Everything the provider carries is here — about 1,250 leagues and cups, in 171 countries.",
+    following: "You follow",
+    byCountry: "By country",
+    pick: "Pick a country",
+    none: "Nothing here.",
+    follow: "Follow",
+    unfollow: "Following",
+    tier: (n: number) => `tier ${n}`,
+    cup: "cup",
+    league: "league",
+    count: (n: number) => `${n} competitions`,
+    isDefault: "on by default",
+    nationalOnly: "Türkiye and Bulgaria only",
+    emptyBoard: "You follow no competitions, so the board is empty.",
+  },
+
   // ---- the calls themselves --------------------------------------------------------------------------------
   // Keyed on call_type, mirroring pool.markets. The database keeps the English; these are what ships.
   markets: {

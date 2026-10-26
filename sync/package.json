@@ -2,7 +2,7 @@
   "name": "thepool-sync",
   "private": true,
   "type": "module",
-  "description": "ESPN \u2192 Supabase sync for The Pool (run by deploy/thepool-sync.timer)",
+  "description": "API-Football → Supabase sync for The Pool (run by deploy/thepool-sync.timer)",
   "dependencies": {
     "@supabase/postgrest-js": "^2.45.0"
   }

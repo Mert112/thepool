@@ -1,9 +1,10 @@
 // §5.8 / §7 Settings: display name, language, notification toggles (all off-switchable), watched competitions
 import { useEffect, useState } from "react";
-import { getCompetitions, getSettings, saveSettings, setDisplayName, type Settings as S } from "../lib/api";
+import { myCompetitions, getSettings, saveSettings, setDisplayName, type Settings as S } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
 import { useI18n } from "../i18n";
 import { ErrorBox, LangPicker, Spinner, Toggle } from "../components/ui";
+import { LeaguesDialog } from "../components/Leagues";
 
 const KEYS: Array<keyof S> = ["new_card", "deadline_reminder", "crew_activity", "result", "weekly_digest"];
 
@@ -15,7 +16,9 @@ export default function Settings() {
   const [s, setS] = useState<S | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [savedName, setSavedName] = useState(false);
-  const { data, error, loading } = useLoad(async () => ({ settings: await getSettings(uid), comps: await getCompetitions() }), []);
+  const [leagues, setLeagues] = useState(false);
+  const [tick, setTick] = useState(0);
+  const { data, error, loading } = useLoad(async () => ({ settings: await getSettings(uid), comps: (await myCompetitions()).following }), [tick]);
   useEffect(() => { if (data) setS(data.settings); }, [data]);
   useEffect(() => { setName(profile?.display_name ?? ""); }, [profile?.display_name]);
   if (loading && !data) return <Spinner />;
@@ -49,6 +52,16 @@ export default function Settings() {
           })}
         </div>
         <div className="panel">
+          <div className="row-of" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+            <div className="eyebrow">{t.leagues.title}</div>
+            <button className="btn" onClick={() => setLeagues(true)}>{t.leagues.more}</button>
+          </div>
+          <div className="small muted">{t.leagues.blurb}</div>
+          <div className="row-of" style={{ marginTop: 10 }}>
+            {data!.comps.map((c) => <span key={c.code} className="chip on">{c.flag_url && <img src={c.flag_url} alt="" className="flag" />}{c.name}</span>)}
+          </div>
+        </div>
+        <div className="panel">
           <div className="eyebrow" style={{ marginBottom: 8 }}>{t.settings.watched}</div>
           <div className="small muted" style={{ marginBottom: 10 }}>{t.settings.watchedBlurb}</div>
           <div className="row-of">
@@ -70,6 +83,7 @@ export default function Settings() {
         <div className="panel small muted">{t.settings.signedInAs(session!.user.email ?? "")}</div>
         <ErrorBox msg={err} />
       </div>
+      {leagues && <LeaguesDialog onClose={() => { setLeagues(false); setTick((n) => n + 1); }} />}
     </div>
   );
 }

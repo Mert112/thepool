@@ -308,6 +308,32 @@ export async function getStickers() {
   if (error) fail(error);
   return (data ?? []) as Array<{ competition_code: string; season: string; call_type: CallType; earned_at: string }>;
 }
+// §provider Which competitions this account follows, and what else there is to find. Twelve
+// club competitions plus Türkiye's and Bulgaria's national-team matches are on for a new
+// account; the rest of the provider's ~1,250 leagues live under "More leagues" (0024).
+export type Following = { code: string; name: string; country: string | null; type: "league" | "cup" | null;
+  tier: number | null; flag_url: string | null; emblem_url: string | null; default: boolean; sort_order: number };
+export type CountryRow = { country: string; flag_url: string | null; n: number };
+export async function myCompetitions(): Promise<{ following: Following[]; countries: CountryRow[] }> {
+  const { data, error } = await supabase.rpc("my_competitions");
+  if (error) fail(error);
+  return (data ?? { following: [], countries: [] }) as { following: Following[]; countries: CountryRow[] };
+}
+export type LeagueRow = Following & { following: boolean };
+export async function competitionsIn(country: string): Promise<LeagueRow[]> {
+  const { data, error } = await supabase.rpc("competitions_in", { p_country: country });
+  if (error) fail(error);
+  return (data ?? []) as LeagueRow[];
+}
+export async function followCompetition(code: string) {
+  const { error } = await supabase.rpc("rpc_follow_competition", { p_code: code });
+  if (error) fail(error);
+}
+export async function unfollowCompetition(code: string) {
+  const { error } = await supabase.rpc("rpc_unfollow_competition", { p_code: code });
+  if (error) fail(error);
+}
+
 export async function getCompetitions() {
   const { data, error } = await supabase.from("competitions").select("code, name, season, sort_order").eq("active", true).order("sort_order");
   if (error) fail(error);

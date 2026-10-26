@@ -7,7 +7,7 @@ The board carried seven sports for a while; `0017_football_only.sql` withdrew al
 ```
 supabase/migrations/   schema, game rules, security, read models, notifications, cron
 supabase/functions/    send-notifications (Deno edge function); sync-fixtures · sync-live are the retired football-data.org sync
-sync/                  espn-sync.mjs — fixtures, live scores, goals/cards and squads (runs on the server)
+sync/                  api-football.mjs — fixtures, live details, squads, odds and settlement (runs on the server)
 web/                   React + Vite app (Vercel / Cloudflare Pages / Netlify)
 tests/                 end-to-end rules test that runs on plain Postgres
 ```
@@ -23,13 +23,14 @@ tests/                 end-to-end rules test that runs on plain Postgres
 | Notifications | `0005_notifications.sql` | triggers + enqueue functions for the six email types (§7 of the design doc) |
 | Cron | `0006_cron.sql` | pg_cron schedules calling the edge functions through pg_net |
 | Multi-sport era | `0008`–`0016` | sports, ESPN leagues, per-sport markets, sportsbook pricing — **withdrawn by `0017`** |
+| One provider | `0024` | API-Football replaces ESPN: a league catalogue, followed competitions, a request budget the database enforces, and a player call voided where the provider gave no coverage |
 | Football only | `0017` | every other sport's data, markets and code paths removed; football's card is all that is left |
 | Explainers, history | `0018` | one plain-English line per call; `call_label()`, `my_history()` |
 | Point economy | `0019` | `profiles.balance`, the append-only `ledger`, stakes on calls, multipliers, rewarded ads, `prize_claims` |
 | The jackpot | `0020` | stakes from 1 point; a call nobody lands rolls its losses forward, less a 10% rake |
 | Pari-mutuel | `0021` | the pot pays, not the house: multipliers gone, nothing minted, money in decimals |
 | Profile icons | `0022` | ten icons, nine earned; rarity follows difficulty |
-| Sync | `sync/espn-sync.mjs` | systemd timer, every minute: fixtures a week out (every 30 min), live scoreboards, goals and cards for matches being played, squads for the board, then settlement |
+| Sync | `sync/api-football.mjs` | systemd timer, every minute: the in-play fixtures somebody is playing, twenty to a request, with their events and line-ups; fixtures and squads daily; one results check per match at full time; then settlement. Every request reserved from the database first |
 | Mail | `send-notifications` | drains the queue through Resend |
 
 Everything settles on the 90-minute state (events at minute ≤ 90 + stoppage only). "Best on the pitch" exists in the schema but is **disabled**: no feed publishes an official man of the match. Flip `markets.enabled` when a source exists.
@@ -50,7 +51,6 @@ Everything installs into a dedicated `pool` schema, so the project can be shared
 
 ### 2. Secrets for the edge functions
 ```
-supabase secrets set FOOTBALL_DATA_KEY=<football-data.org token>
 supabase secrets set RESEND_API_KEY=<resend key>
 supabase secrets set SITE_URL=https://thepool.today
 supabase secrets set MAIL_FROM="The Pool <hello@thepool.today>"
@@ -199,20 +199,62 @@ const { t, fmt, lang, setLang } = useI18n();
   migration, write the dictionary against `Dict`, add one to `supabase/functions/_shared/i18n.ts`
   for the mail, and the compiler will name anything you missed.
 
-## ESPN sync
+## API-Football sync (`0024`)
 ```
-cp sync/.env.example sync/.env    # SUPABASE_URL and a secret key (Supabase → Settings → API keys)
+cp sync/.env.example sync/.env    # SUPABASE_URL, SUPABASE_SERVICE_KEY, FOOTBALL_API_KEY
 bash deploy/setup-sync.sh         # installs the thepool-sync systemd timer
 journalctl -u thepool-sync -f     # one line per pass
-node sync/espn-sync.mjs --dry     # fetch and parse without writing
+node sync/api-football.mjs --dry  # fetch and parse without writing
+node sync/api-football.mjs --catalogue --fixtures --squads   # force the daily passes
 ```
-ESPN's `site.api.espn.com` feeds are public but unofficial: no key, no contract, and they can change without notice. The sync is polite (about 150 small requests every 30 minutes, a handful per minute otherwise). Football scoreboards only accept single-day `dates=` queries. Competitions are rows in `pool.competitions` (`espn_path`, optional `espn_params`) — add a league by inserting one.
+One provider: [API-Football](https://www.api-football.com) v3, on the Pro plan. The key lives in
+`FOOTBALL_API_KEY` in `sync/.env` (gitignored, `chmod 600`) and nowhere else — not in the
+database, not in the bundle.
 
-## Provider notes (football-data.org, retired)
-- Free tier: 10 requests/minute, 12 competitions (exactly the ones in the design doc), match detail includes goals (with assists) and bookings. The live sync is 1 list call + up to 4 detail calls per minute and sits out the two minutes an hour the fixtures sync uses.
-- 90-minute rule: `score.regularTime` is used when a match goes to extra time; goals/bookings carry `minute` and `injuryTime`, and only `minute <= 90` counts.
-- Corrections after settlement (a re-credited assist, a withdrawn goal) re-run settlement automatically; affected players get a "correction" email.
-- If the free tier turns out to omit bookings or assists on your key, the event calls will simply never land; check one finished match's JSON at `/v4/matches/{id}` before launch.
+**The request budget is the database's.** The plan allows 7,500 calls a day; `config.football_api`
+sets the ceiling at 7,000 and `api_usage` counts a row per UTC day, by endpoint. The sync calls
+`api_take(n, kind)` *before* it spends, and a pass that cannot afford a call does not make it. A
+counter inside the script would reset every time systemd restarted it.
+
+**What a pass costs.** An idle minute costs nothing at all:
+
+| Pass | When | Requests |
+|---|---|---|
+| League catalogue | weekly | 1 (~1,250 leagues) |
+| Fixtures | daily, −2 to +8 days | 1 per followed competition |
+| Squads | daily | 1 per team with a fixture on the board |
+| Odds | once per fixture, retried after 6h | 1 per fixture |
+| **Live** | **every minute** | **1 per 20 in-play fixtures with a card on them** |
+| Results | once, after the whistle | 1 per 20 fixtures |
+
+The live pass is cheap because `/fixtures?ids=a-b-c` returns up to twenty full fixture details —
+score, events and line-ups — in one response. A match nobody is playing never gets a live pass,
+only a single results check at full time.
+
+**Competitions.** All ~1,250 leagues and cups are in `competitions` with their country and type;
+only the ones somebody follows are `active`, and only active ones cost requests. A new account
+follows the Süper Lig, 1. Lig, Türkiye Kupası, Bulgarian First League, the Champions, Europa and
+Conference Leagues, the Premier League, La Liga, Serie A, Bundesliga and Ligue 1 — plus Türkiye's
+and Bulgaria's national-team matches, which are the World Cup and Euro qualifiers, the Nations
+League and the two finals, filtered to those two sides by `competitions.team_filter`. Everything
+else is under **More leagues** on the board and in settings. `tier` is set by hand for the
+competitions we follow: the provider does not publish it.
+
+**The 90-minute rule, unchanged.** `score.fulltime` is the score at 90 and is what every call
+settles on; `goals` includes extra time and is kept for the screen only. An event's `elapsed`
+over 90 does not count (`match_events.counts` is a generated column), and a card shown before
+kick-off arrives as a negative minute and is recorded as minute 0.
+
+**A call nobody can judge is void.** `matches.detail_at` records when the provider last handed
+over a fixture's events and line-ups, stamped by the writes themselves. Null at full time means
+the goalscorer, assist, card and man-of-the-match calls are **voided and the stakes handed
+back** — not scored as misses. Everything settled before `0024` keeps the verdict it was given.
+
+**Mapping off ESPN.** Nothing was re-keyed. `teams.af_id`, `players.af_id` and
+`matches.af_fixture_id` were added beside the old columns, and the sync claims an existing row by
+name within its competition (accents, case and club-type noise ignored) before creating a new
+one. 67 matches and 87 teams were claimed on the first pass; the 713 settled matches that predate
+the window keep their ESPN keys and their history.
 
 ## Running the rules test locally
 Needs a plain Postgres 17 and a role that can create databases:
@@ -222,6 +264,8 @@ bash tests/run.sh      # rebuilds the db from every migration, then runs the tes
 `tests/game_test.sql` walks a full card: crew creation, RLS, filling, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
 `tests/football_test.sql` covers the rest of the card: the 3-way result, the goals line, the handicap, pushes, the red card's time window, non-runners and withdrawn cards.
 `tests/jackpot_test.sql` covers the rollover: the rake, the compounding, a void never feeding the pot, one competition's jackpot staying out of another's, a single winner taking it all, several winners splitting it by stake with the remainder carried, and settling twice moving nothing.
+`tests/provider_test.sql` covers the provider: the request budget and what happens when it runs out, the league catalogue, following and unfollowing, which fixtures are worth a request, odds asked for once rather than once a minute, and the void-on-no-coverage rule.
+`tests/provider_test.mjs` runs the parsers against responses API-Football actually sent (`tests/fixtures/api-football.json`): the 90-minute rule, extra time, every status code, events, line-ups, odds and the name matching.
 `tests/i18n_test.sql` covers the language: the null default, the three-way check, `rpc_set_language()` setting only your own, the pieces a call travels as, that no English prose leaks into them, and the grants.
 `tests/lang_test.mjs` covers the default-language rule in the browser (`node --test`).
 `tests/economy_test.sql` covers the money: the starting 1,000, a stake deducted at lock, a payout on a hit, a loss on a miss, a refund on a void, the balance handed back when a match is called off, a correction adjusting rather than double-paying, the ten-a-day ad cap, the prize claim, and the grants that stop a client touching any of it.

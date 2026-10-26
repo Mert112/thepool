@@ -1,11 +1,12 @@
 import { useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { getBoard, getCompetitions, getMarkets, getMyCardMatches, openCard, getMyCrews, type BoardRow, type Market } from "../lib/api";
+import { getBoard, getCompetitions, getMarkets, getMyCardMatches, myCompetitions, openCard, getMyCrews, type BoardRow, type Market } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { liveClock, marketTitle, offered } from "../lib/calls";
 import { soon } from "../lib/format";
 import { useI18n, type Dict } from "../i18n";
 import { Empty, ErrorBox, Modal } from "../components/ui";
+import { LeaguesDialog } from "../components/Leagues";
 
 export default function Board() {
   const nav = useNavigate();
@@ -16,18 +17,25 @@ export default function Board() {
   const [phase, setPhase] = useState<"live" | "upcoming" | "settled">("upcoming");
   const [league, setLeague] = useState("ALL");
   const [creating, setCreating] = useState<BoardRow | null>(null);
+  const [leagues, setLeagues] = useState(false);
+  const [follows, setFollows] = useState(0);
+  // §provider the board is the competitions this account follows — twelve plus the national
+  // teams out of the box, and whatever else was added under "More leagues" (0024)
   const { data: meta } = useLoad(async () => {
-    const [comps, markets, mine] = await Promise.all([getCompetitions(), getMarkets(), getMyCardMatches(uid)]);
-    return { comps, markets, mine };
-  }, []);
+    const [comps, markets, mine, mineComps] = await Promise.all([getCompetitions(), getMarkets(), getMyCardMatches(uid), myCompetitions()]);
+    return { comps, markets, mine, following: new Set(mineComps.following.map((c) => c.code)) };
+  }, [follows]);
   const { data: board, error, loading, reload } = useLoad(() => getBoard(), []);
 
   if (error) return <ErrorBox msg={error} />;
   // a game past its start is closed for cards even when the feed has no live data for it yet
-  const rowsAll = (board ?? []).map((r) => (r.phase === "upcoming" && new Date(r.utc_date).getTime() <= now ? { ...r, phase: "live" as const, clock: r.clock ?? t.board.started } : r));
+  const followed = meta?.following;
+  const rowsAll = (board ?? [])
+    .filter((r) => !followed || followed.has(r.competition_code))
+    .map((r) => (r.phase === "upcoming" && new Date(r.utc_date).getTime() <= now ? { ...r, phase: "live" as const, clock: r.clock ?? t.board.started } : r));
   const liveRows = rowsAll.filter((r) => r.phase === "live");
   const comps = meta?.comps ?? [];
-  const leagues = ["ALL", ...comps.filter((c) => rowsAll.some((r) => r.competition_code === c.code)).map((c) => c.code)];
+  const leaguesOnBoard = ["ALL", ...comps.filter((c) => rowsAll.some((r) => r.competition_code === c.code)).map((c) => c.code)];
   const rows = rowsAll.filter((r) => r.phase === phase).filter((r) => league === "ALL" || r.competition_code === league);
   if (phase === "settled") rows.reverse();
   const allMarkets = meta?.markets ?? [];
@@ -56,7 +64,8 @@ export default function Board() {
           ))}
         </div>
         <div className="row-of">
-          {leagues.length > 2 && leagues.map((l) => <button key={l} className={"chip" + (league === l ? " on" : "")} onClick={() => setLeague(l)}>{l === "ALL" ? t.board.all : comps.find((c) => c.code === l)?.name ?? l}</button>)}
+          {leaguesOnBoard.length > 2 && leaguesOnBoard.map((l) => <button key={l} className={"chip" + (league === l ? " on" : "")} onClick={() => setLeague(l)}>{l === "ALL" ? t.board.all : comps.find((c) => c.code === l)?.name ?? l}</button>)}
+          <button className="chip" onClick={() => setLeagues(true)}>{t.leagues.more}</button>
         </div>
       </div>
 
@@ -70,7 +79,8 @@ export default function Board() {
         <span></span>
       </div>
       {loading && !board && Array.from({ length: 6 }, (_, i) => <div key={i} className="skeleton" style={{ animationDelay: `${i * 90}ms` }} />)}
-      {board && rows.length === 0 && <Empty>{t.board.emptyHere}{league !== "ALL" ? t.board.emptyForComp : ""}. {phase === "live" ? t.board.emptyLive : phase === "upcoming" ? t.board.emptyUpcoming : t.board.emptySettled}</Empty>}
+      {board && rows.length === 0 && followed?.size === 0 && <Empty>{t.leagues.emptyBoard} <button className="btn" onClick={() => setLeagues(true)}>{t.leagues.more}</button></Empty>}
+      {board && rows.length === 0 && followed?.size !== 0 && <Empty>{t.board.emptyHere}{league !== "ALL" ? t.board.emptyForComp : ""}. {phase === "live" ? t.board.emptyLive : phase === "upcoming" ? t.board.emptyUpcoming : t.board.emptySettled}</Empty>}
       {rows.map((r, i) => {
         const live = r.phase === "live", settled = r.phase === "settled";
         const mk = allMarkets.filter((k) => offered(k, r));
@@ -106,6 +116,7 @@ export default function Board() {
           </div>
         );
       })}
+      {leagues && <LeaguesDialog onClose={() => { setLeagues(false); setFollows((n) => n + 1); }} />}
       {creating && <CreateCardDialog row={creating} onClose={() => setCreating(null)} onDone={(cardId) => { setCreating(null); reload(); nav(`/card/${cardId}`); }} />}
     </div>
   );

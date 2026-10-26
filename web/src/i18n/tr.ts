@@ -416,6 +416,25 @@ export const tr: Dict = {
     theJackpotIs: " — kimsenin tutturamadığı tahminin potu, o turnuvadaki bir sonraki maça devreder.",
   },
 
+  leagues: {
+    more: "Diğer ligler",
+    title: "Turnuvalar",
+    blurb: "Tabelada takip ettiğin turnuvalar görünür. Sağlayıcının taşıdığı her şey burada — 171 ülkede yaklaşık 1.250 lig ve kupa.",
+    following: "Takip ettiklerin",
+    byCountry: "Ülkeye göre",
+    pick: "Bir ülke seç",
+    none: "Burada bir şey yok.",
+    follow: "Takip et",
+    unfollow: "Takiptesin",
+    tier: (n: number) => `${n}. lig`,
+    cup: "kupa",
+    league: "lig",
+    count: (n: number) => `${n} turnuva`,
+    isDefault: "varsayılan olarak açık",
+    nationalOnly: "sadece Türkiye ve Bulgaristan",
+    emptyBoard: "Hiçbir turnuvayı takip etmiyorsun, o yüzden tabela boş.",
+  },
+
   markets: {
     winner: { title: "Maç sonucu", short: "maç sonucu", explainer: "Ev sahibi, beraberlik ya da deplasman: 90 dakika ve uzatma dakikaları sonunda önde olan kazanır; uzatmalar ve penaltılar sayılmaz." },
     total: { title: "Alt / üst", short: "alt-üst", explainer: "İki takımın gollerini topla: toplam çizginin üstünde biterse üst, altında biterse alt tutar; tam çizginin üstüne denk gelirse yatırımın iade edilir." },

@@ -443,3 +443,10 @@ img, svg, video { max-width: 100%; }
   background: var(--raise); border: 2px solid var(--line); border-radius: 8px; color: var(--soft); cursor: pointer; }
 .lang-select:hover { color: var(--text); border-color: var(--line-soft); }
 @media (max-width: 700px) { .lang-select { padding: 4px 6px; } }
+
+/* §provider "More leagues": the catalogue, a country at a time */
+.flag { width: 16px; height: 11px; object-fit: cover; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.league-list { margin-top: 10px; max-height: 320px; overflow-y: auto; }
+.league-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--raise); }
+.league-row b { font-size: 14px; }

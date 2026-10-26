@@ -1,0 +1,1839 @@
+{
+ "finished": {
+  "fixture": {
+   "id": 1584439,
+   "date": "2026-10-23T17:00:00+00:00",
+   "timestamp": 1792774800,
+   "status": {
+    "long": "Match Finished",
+    "short": "FT",
+    "elapsed": 90,
+    "extra": 6
+   }
+  },
+  "league": {
+   "id": 203,
+   "name": "Süper Lig",
+   "country": "Turkey",
+   "season": 2026,
+   "round": "Regular Season - 9"
+  },
+  "teams": {
+   "home": {
+    "id": 996,
+    "name": "Alanyaspor",
+    "logo": "https://media.api-sports.io/football/teams/996.png"
+   },
+   "away": {
+    "id": 7411,
+    "name": "Kocaelispor",
+    "logo": "https://media.api-sports.io/football/teams/7411.png"
+   }
+  },
+  "goals": {
+   "home": 1,
+   "away": 2
+  },
+  "score": {
+   "halftime": {
+    "home": 0,
+    "away": 2
+   },
+   "fulltime": {
+    "home": 1,
+    "away": 2
+   },
+   "extratime": {
+    "home": null,
+    "away": null
+   },
+   "penalty": {
+    "home": null,
+    "away": null
+   }
+  },
+  "events": [
+   {
+    "time": {
+     "elapsed": -5,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 144413,
+     "name": "Onur Öztonga"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Argument"
+   },
+   {
+    "time": {
+     "elapsed": 27,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 264627,
+     "name": "B. Kutlu"
+    },
+    "assist": {
+     "id": 31280,
+     "name": "R. Rivas"
+    },
+    "type": "Goal",
+    "detail": "Normal Goal",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 42,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 26568,
+     "name": "M. Baku"
+    },
+    "assist": {
+     "id": 20782,
+     "name": "F. Aye"
+    },
+    "type": "Goal",
+    "detail": "Normal Goal",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 45,
+     "extra": 1
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 292363,
+     "name": "Emir Ortakaya"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Foul"
+   },
+   {
+    "time": {
+     "elapsed": 46,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 41975,
+     "name": "G. Makouta"
+    },
+    "assist": {
+     "id": 237120,
+     "name": "Maestro"
+    },
+    "type": "subst",
+    "detail": "Substitution 1",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 46,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 43084,
+     "name": "I. Hagi"
+    },
+    "assist": {
+     "id": 134490,
+     "name": "E. Keskin"
+    },
+    "type": "subst",
+    "detail": "Substitution 2",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 46,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 354082,
+     "name": "A. Usluoglu"
+    },
+    "assist": {
+     "id": 285506,
+     "name": "Bikoue"
+    },
+    "type": "subst",
+    "detail": "Substitution 3",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 52,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 384398,
+     "name": "Ruan"
+    },
+    "assist": {
+     "id": 134490,
+     "name": "E. Keskin"
+    },
+    "type": "Goal",
+    "detail": "Normal Goal",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 53,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 50079,
+     "name": "Fatih Aksoy"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Foul"
+   },
+   {
+    "time": {
+     "elapsed": 61,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 400550,
+     "name": "G. Sousa"
+    },
+    "assist": {
+     "id": 87791,
+     "name": "D. Agyei"
+    },
+    "type": "subst",
+    "detail": "Substitution 1",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 67,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 31280,
+     "name": "R. Rivas"
+    },
+    "assist": {
+     "id": 63034,
+     "name": "M. Cinan"
+    },
+    "type": "subst",
+    "detail": "Substitution 2",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 67,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 26568,
+     "name": "M. Baku"
+    },
+    "assist": {
+     "id": 62181,
+     "name": "M. Altunbas"
+    },
+    "type": "subst",
+    "detail": "Substitution 3",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 70,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 371932,
+     "name": "B. Gezek"
+    },
+    "assist": {
+     "id": 282773,
+     "name": "I. Celik"
+    },
+    "type": "subst",
+    "detail": "Substitution 4",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 77,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 50079,
+     "name": "F. Aksoy"
+    },
+    "assist": {
+     "id": 463330,
+     "name": "O. Ben Ali"
+    },
+    "type": "subst",
+    "detail": "Substitution 5",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 81,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 264627,
+     "name": "Berkan Kutlu"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Foul"
+   },
+   {
+    "time": {
+     "elapsed": 82,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 264627,
+     "name": "B. Kutlu"
+    },
+    "assist": {
+     "id": 272242,
+     "name": "M. Maglica"
+    },
+    "type": "subst",
+    "detail": "Substitution 4",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 82,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 20782,
+     "name": "F. Aye"
+    },
+    "assist": {
+     "id": 146053,
+     "name": "T. Gulliksen"
+    },
+    "type": "subst",
+    "detail": "Substitution 5",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 90,
+     "extra": 2
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 282773,
+     "name": "İzzet Çelik"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Foul"
+   },
+   {
+    "time": {
+     "elapsed": 90,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 48211,
+     "name": "Fidan Aliti"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Argument"
+   },
+   {
+    "time": {
+     "elapsed": 90,
+     "extra": 3
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 3314,
+     "name": "Show"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Time wasting"
+   }
+  ],
+  "lineups": [
+   {
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor"
+    },
+    "formation": "3-4-2-1",
+    "startXI": [
+     {
+      "player": {
+       "id": 10476,
+       "name": "Paulo Victor",
+       "number": 48,
+       "pos": "G"
+      }
+     },
+     {
+      "player": {
+       "id": 282946,
+       "name": "N. Lima",
+       "number": 3,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 48211,
+       "name": "F. Aliti",
+       "number": 5,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 50079,
+       "name": "F. Aksoy",
+       "number": 20,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 19042,
+       "name": "F. Hadergjonaj",
+       "number": 94,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 41975,
+       "name": "G. Makouta",
+       "number": 42,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 371932,
+       "name": "B. Gezek",
+       "number": 55,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 384398,
+       "name": "Ruan",
+       "number": 11,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 43084,
+       "name": "I. Hagi",
+       "number": 10,
+       "pos": "F"
+      }
+     },
+     {
+      "player": {
+       "id": 302392,
+       "name": "I. Kaya",
+       "number": 7,
+       "pos": "F"
+      }
+     },
+     {
+      "player": {
+       "id": 354082,
+       "name": "A. Usluoglu",
+       "number": 17,
+       "pos": "F"
+      }
+     }
+    ],
+    "substitutes": [
+     {
+      "player": {
+       "id": 339950,
+       "name": "M. Bayram",
+       "number": 23,
+       "pos": "G"
+      }
+     },
+     {
+      "player": {
+       "id": 360121,
+       "name": "B. Ozyurt",
+       "number": 4,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 2910,
+       "name": "Hwang Ui-Jo",
+       "number": 16,
+       "pos": "F"
+      }
+     },
+     {
+      "player": {
+       "id": 237120,
+       "name": "Maestro",
+       "number": 58,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 134490,
+       "name": "E. Keskin",
+       "number": 8,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 282773,
+       "name": "I. Celik",
+       "number": 26,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 286825,
+       "name": "Y. Ozdemir",
+       "number": 88,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 285506,
+       "name": "Bikoue",
+       "number": 19,
+       "pos": "F"
+      }
+     },
+     {
+      "player": {
+       "id": 3034,
+       "name": "M. Elia",
+       "number": 12,
+       "pos": "F"
+      }
+     },
+     {
+      "player": {
+       "id": 463330,
+       "name": "O. Ben Ali",
+       "number": 9,
+       "pos": "F"
+      }
+     }
+    ]
+   },
+   {
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor"
+    },
+    "formation": "5-4-1",
+    "startXI": [
+     {
+      "player": {
+       "id": 302863,
+       "name": "S. Oztasdelen",
+       "number": 83,
+       "pos": "G"
+      }
+     },
+     {
+      "player": {
+       "id": 143827,
+       "name": "U. Yildiz",
+       "number": 22,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 19828,
+       "name": "A. Dijksteel",
+       "number": 2,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 292363,
+       "name": "E. Ortakaya",
+       "number": 5,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 3314,
+       "name": "Show",
+       "number": 14,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 31280,
+       "name": "R. Rivas",
+       "number": 99,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 400550,
+       "name": "G. Sousa",
+       "number": 11,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 264627,
+       "name": "B. Kutlu",
+       "number": 10,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 328097,
+       "name": "M. Susoho",
+       "number": 20,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 26568,
+       "name": "M. Baku",
+       "number": 32,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 20782,
+       "name": "F. Aye",
+       "number": 97,
+       "pos": "F"
+      }
+     }
+    ],
+    "substitutes": [
+     {
+      "player": {
+       "id": 134492,
+       "name": "O. Piri",
+       "number": 23,
+       "pos": "G"
+      }
+     },
+     {
+      "player": {
+       "id": 272242,
+       "name": "M. Maglica",
+       "number": 6,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 63034,
+       "name": "M. Cinan",
+       "number": 3,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 144413,
+       "name": "O. Oztonga",
+       "number": 41,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 491803,
+       "name": "E. Bilim",
+       "number": 27,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 50176,
+       "name": "T. Bingol",
+       "number": 75,
+       "pos": "D"
+      }
+     },
+     {
+      "player": {
+       "id": 146053,
+       "name": "T. Gulliksen",
+       "number": 8,
+       "pos": "M"
+      }
+     },
+     {
+      "player": {
+       "id": 62181,
+       "name": "M. Altunbas",
+       "number": 26,
+       "pos": "F"
+      }
+     },
+     {
+      "player": {
+       "id": 87791,
+       "name": "D. Agyei",
+       "number": 7,
+       "pos": "F"
+      }
+     },
+     {
+      "player": {
+       "id": 688943,
+       "name": "F. Demir",
+       "number": 29,
+       "pos": "F"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "no_lineups": {
+  "fixture": {
+   "id": 1584440,
+   "date": "2026-10-23T17:00:00+00:00",
+   "timestamp": 1792774800,
+   "status": {
+    "long": "Match Finished",
+    "short": "FT",
+    "elapsed": 90,
+    "extra": 6
+   }
+  },
+  "league": {
+   "id": 203,
+   "name": "Süper Lig",
+   "country": "Turkey",
+   "season": 2026,
+   "round": "Regular Season - 9"
+  },
+  "teams": {
+   "home": {
+    "id": 996,
+    "name": "Alanyaspor",
+    "logo": "https://media.api-sports.io/football/teams/996.png"
+   },
+   "away": {
+    "id": 7411,
+    "name": "Kocaelispor",
+    "logo": "https://media.api-sports.io/football/teams/7411.png"
+   }
+  },
+  "goals": {
+   "home": 1,
+   "away": 2
+  },
+  "score": {
+   "halftime": {
+    "home": 0,
+    "away": 2
+   },
+   "fulltime": {
+    "home": 1,
+    "away": 2
+   },
+   "extratime": {
+    "home": null,
+    "away": null
+   },
+   "penalty": {
+    "home": null,
+    "away": null
+   }
+  },
+  "events": [
+   {
+    "time": {
+     "elapsed": -5,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 144413,
+     "name": "Onur Öztonga"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Argument"
+   },
+   {
+    "time": {
+     "elapsed": 27,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 264627,
+     "name": "B. Kutlu"
+    },
+    "assist": {
+     "id": 31280,
+     "name": "R. Rivas"
+    },
+    "type": "Goal",
+    "detail": "Normal Goal",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 42,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 26568,
+     "name": "M. Baku"
+    },
+    "assist": {
+     "id": 20782,
+     "name": "F. Aye"
+    },
+    "type": "Goal",
+    "detail": "Normal Goal",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 45,
+     "extra": 1
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 292363,
+     "name": "Emir Ortakaya"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Foul"
+   },
+   {
+    "time": {
+     "elapsed": 46,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 41975,
+     "name": "G. Makouta"
+    },
+    "assist": {
+     "id": 237120,
+     "name": "Maestro"
+    },
+    "type": "subst",
+    "detail": "Substitution 1",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 46,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 43084,
+     "name": "I. Hagi"
+    },
+    "assist": {
+     "id": 134490,
+     "name": "E. Keskin"
+    },
+    "type": "subst",
+    "detail": "Substitution 2",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 46,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 354082,
+     "name": "A. Usluoglu"
+    },
+    "assist": {
+     "id": 285506,
+     "name": "Bikoue"
+    },
+    "type": "subst",
+    "detail": "Substitution 3",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 52,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 384398,
+     "name": "Ruan"
+    },
+    "assist": {
+     "id": 134490,
+     "name": "E. Keskin"
+    },
+    "type": "Goal",
+    "detail": "Normal Goal",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 53,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 50079,
+     "name": "Fatih Aksoy"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Foul"
+   },
+   {
+    "time": {
+     "elapsed": 61,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 400550,
+     "name": "G. Sousa"
+    },
+    "assist": {
+     "id": 87791,
+     "name": "D. Agyei"
+    },
+    "type": "subst",
+    "detail": "Substitution 1",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 67,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 31280,
+     "name": "R. Rivas"
+    },
+    "assist": {
+     "id": 63034,
+     "name": "M. Cinan"
+    },
+    "type": "subst",
+    "detail": "Substitution 2",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 67,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 26568,
+     "name": "M. Baku"
+    },
+    "assist": {
+     "id": 62181,
+     "name": "M. Altunbas"
+    },
+    "type": "subst",
+    "detail": "Substitution 3",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 70,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 371932,
+     "name": "B. Gezek"
+    },
+    "assist": {
+     "id": 282773,
+     "name": "I. Celik"
+    },
+    "type": "subst",
+    "detail": "Substitution 4",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 77,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 50079,
+     "name": "F. Aksoy"
+    },
+    "assist": {
+     "id": 463330,
+     "name": "O. Ben Ali"
+    },
+    "type": "subst",
+    "detail": "Substitution 5",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 81,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 264627,
+     "name": "Berkan Kutlu"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Foul"
+   },
+   {
+    "time": {
+     "elapsed": 82,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 264627,
+     "name": "B. Kutlu"
+    },
+    "assist": {
+     "id": 272242,
+     "name": "M. Maglica"
+    },
+    "type": "subst",
+    "detail": "Substitution 4",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 82,
+     "extra": null
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 20782,
+     "name": "F. Aye"
+    },
+    "assist": {
+     "id": 146053,
+     "name": "T. Gulliksen"
+    },
+    "type": "subst",
+    "detail": "Substitution 5",
+    "comments": null
+   },
+   {
+    "time": {
+     "elapsed": 90,
+     "extra": 2
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 282773,
+     "name": "İzzet Çelik"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Foul"
+   },
+   {
+    "time": {
+     "elapsed": 90,
+     "extra": null
+    },
+    "team": {
+     "id": 996,
+     "name": "Alanyaspor",
+     "logo": "https://media.api-sports.io/football/teams/996.png"
+    },
+    "player": {
+     "id": 48211,
+     "name": "Fidan Aliti"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Argument"
+   },
+   {
+    "time": {
+     "elapsed": 90,
+     "extra": 3
+    },
+    "team": {
+     "id": 7411,
+     "name": "Kocaelispor",
+     "logo": "https://media.api-sports.io/football/teams/7411.png"
+    },
+    "player": {
+     "id": 3314,
+     "name": "Show"
+    },
+    "assist": {
+     "id": null,
+     "name": null
+    },
+    "type": "Card",
+    "detail": "Yellow Card",
+    "comments": "Time wasting"
+   }
+  ],
+  "lineups": [],
+  "players": [
+   {
+    "team": {
+     "id": 996
+    },
+    "players": [
+     {
+      "player": {
+       "id": 10476,
+       "name": "Paulo Victor"
+      },
+      "statistics": [
+       {
+        "games": {
+         "minutes": 90,
+         "number": 48,
+         "position": "G"
+        }
+       }
+      ]
+     },
+     {
+      "player": {
+       "id": 282946,
+       "name": "N. Lima"
+      },
+      "statistics": [
+       {
+        "games": {
+         "minutes": 90,
+         "number": 3,
+         "position": "D"
+        }
+       }
+      ]
+     },
+     {
+      "player": {
+       "id": 48211,
+       "name": "F. Aliti"
+      },
+      "statistics": [
+       {
+        "games": {
+         "minutes": 90,
+         "number": 5,
+         "position": "D"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "team": {
+     "id": 7411
+    },
+    "players": [
+     {
+      "player": {
+       "id": 302863,
+       "name": "S. Oztasdelen"
+      },
+      "statistics": [
+       {
+        "games": {
+         "minutes": 90,
+         "number": 83,
+         "position": "G"
+        }
+       }
+      ]
+     },
+     {
+      "player": {
+       "id": 143827,
+       "name": "U. Yildiz"
+      },
+      "statistics": [
+       {
+        "games": {
+         "minutes": 90,
+         "number": 22,
+         "position": "D"
+        }
+       }
+      ]
+     },
+     {
+      "player": {
+       "id": 19828,
+       "name": "A. Dijksteel"
+      },
+      "statistics": [
+       {
+        "games": {
+         "minutes": 90,
+         "number": 2,
+         "position": "D"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "scheduled": {
+  "fixture": {
+   "id": 1584442,
+   "date": "2026-10-26T18:30:00+00:00",
+   "timestamp": 1793039400,
+   "status": {
+    "long": "Not Started",
+    "short": "NS",
+    "elapsed": null,
+    "extra": null
+   }
+  },
+  "league": {
+   "id": 203,
+   "name": "Süper Lig",
+   "country": "Turkey",
+   "season": 2026,
+   "round": "Regular Season - 9"
+  },
+  "teams": {
+   "home": {
+    "id": 645,
+    "name": "Galatasaray",
+    "logo": "https://media.api-sports.io/football/teams/645.png"
+   },
+   "away": {
+    "id": 611,
+    "name": "Fenerbahçe",
+    "logo": "https://media.api-sports.io/football/teams/611.png"
+   }
+  },
+  "goals": {
+   "home": null,
+   "away": null
+  },
+  "score": {
+   "halftime": {
+    "home": null,
+    "away": null
+   },
+   "fulltime": {
+    "home": null,
+    "away": null
+   },
+   "extratime": {
+    "home": null,
+    "away": null
+   },
+   "penalty": {
+    "home": null,
+    "away": null
+   }
+  }
+ },
+ "odds": {
+  "fixture": {
+   "id": 1584439
+  },
+  "bookmakers": [
+   {
+    "id": 7,
+    "name": "William Hill",
+    "bets": [
+     {
+      "id": 1,
+      "name": "Match Winner",
+      "values": [
+       {
+        "value": "Home",
+        "odd": "1.95"
+       },
+       {
+        "value": "Draw",
+        "odd": "3.10"
+       },
+       {
+        "value": "Away",
+        "odd": "3.90"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": 8,
+    "name": "Bet365",
+    "bets": [
+     {
+      "id": 1,
+      "name": "Match Winner",
+      "values": [
+       {
+        "value": "Home",
+        "odd": "1.91"
+       },
+       {
+        "value": "Draw",
+        "odd": "3.20"
+       },
+       {
+        "value": "Away",
+        "odd": "4.00"
+       }
+      ]
+     },
+     {
+      "id": 4,
+      "name": "Asian Handicap",
+      "values": [
+       {
+        "value": "Home -1.25",
+        "odd": "3.30"
+       },
+       {
+        "value": "Away -1.25",
+        "odd": "1.32"
+       },
+       {
+        "value": "Home -1",
+        "odd": "2.85"
+       },
+       {
+        "value": "Away -1",
+        "odd": "1.40"
+       },
+       {
+        "value": "Home -0.75",
+        "odd": "2.25"
+       },
+       {
+        "value": "Away -0.75",
+        "odd": "1.62"
+       },
+       {
+        "value": "Home -0.5",
+        "odd": "1.98"
+       },
+       {
+        "value": "Away -0.5",
+        "odd": "1.82"
+       },
+       {
+        "value": "Home -0.25",
+        "odd": "1.65"
+       },
+       {
+        "value": "Away -0.25",
+        "odd": "2.20"
+       },
+       {
+        "value": "Home +0",
+        "odd": "1.40"
+       },
+       {
+        "value": "Away +0",
+        "odd": "2.85"
+       },
+       {
+        "value": "Home +0.25",
+        "odd": "1.30"
+       },
+       {
+        "value": "Away +0.25",
+        "odd": "3.45"
+       },
+       {
+        "value": "Home +0.5",
+        "odd": "1.24"
+       },
+       {
+        "value": "Away +0.5",
+        "odd": "3.90"
+       },
+       {
+        "value": "Home +0.75",
+        "odd": "1.16"
+       },
+       {
+        "value": "Away +0.75",
+        "odd": "5.25"
+       },
+       {
+        "value": "Home -1.75",
+        "odd": "4.65"
+       },
+       {
+        "value": "Away -1.75",
+        "odd": "1.18"
+       },
+       {
+        "value": "Home -1.5",
+        "odd": "3.55"
+       },
+       {
+        "value": "Away -1.5",
+        "odd": "1.27"
+       }
+      ]
+     },
+     {
+      "id": 5,
+      "name": "Goals Over/Under",
+      "values": [
+       {
+        "value": "Over 1.5",
+        "odd": "1.36"
+       },
+       {
+        "value": "Under 1.5",
+        "odd": "3.00"
+       },
+       {
+        "value": "Over 2.5",
+        "odd": "2.15"
+       },
+       {
+        "value": "Under 2.5",
+        "odd": "1.67"
+       },
+       {
+        "value": "Over 3.5",
+        "odd": "3.75"
+       },
+       {
+        "value": "Under 3.5",
+        "odd": "1.25"
+       },
+       {
+        "value": "Over 0.5",
+        "odd": "1.07"
+       },
+       {
+        "value": "Under 0.5",
+        "odd": "9.00"
+       },
+       {
+        "value": "Over 4.5",
+        "odd": "9.00"
+       },
+       {
+        "value": "Under 4.5",
+        "odd": "1.07"
+       },
+       {
+        "value": "Over 5.5",
+        "odd": "19.00"
+       },
+       {
+        "value": "Under 5.5",
+        "odd": "1.02"
+       },
+       {
+        "value": "Over 6.5",
+        "odd": "41.00"
+       },
+       {
+        "value": "Under 6.5",
+        "odd": "1.00"
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "leagues": [
+  {
+   "league": {
+    "id": 203,
+    "name": "Süper Lig",
+    "type": "League",
+    "logo": "https://media.api-sports.io/football/leagues/203.png"
+   },
+   "country": {
+    "name": "Turkey",
+    "code": "TR",
+    "flag": "https://media.api-sports.io/flags/tr.svg"
+   },
+   "seasons": [
+    {
+     "year": 2026,
+     "start": "2026-08-14",
+     "end": "2027-05-23",
+     "current": true,
+     "coverage": {
+      "fixtures": {
+       "events": true,
+       "lineups": true,
+       "statistics_fixtures": true,
+       "statistics_players": true
+      },
+      "standings": true,
+      "players": true,
+      "top_scorers": true,
+      "top_assists": true,
+      "top_cards": true,
+      "injuries": true,
+      "predictions": true,
+      "odds": true
+     }
+    }
+   ]
+  },
+  {
+   "league": {
+    "id": 206,
+    "name": "Türkiye Kupası",
+    "type": "Cup",
+    "logo": "https://media.api-sports.io/football/leagues/206.png"
+   },
+   "country": {
+    "name": "Turkey",
+    "code": "TR",
+    "flag": "https://media.api-sports.io/flags/tr.svg"
+   },
+   "seasons": [
+    {
+     "year": 2026,
+     "start": "2026-09-15",
+     "end": "2026-10-28",
+     "current": true,
+     "coverage": {
+      "fixtures": {
+       "events": true,
+       "lineups": false,
+       "statistics_fixtures": false,
+       "statistics_players": false
+      },
+      "standings": false,
+      "players": false,
+      "top_scorers": false,
+      "top_assists": false,
+      "top_cards": false,
+      "injuries": false,
+      "predictions": true,
+      "odds": false
+     }
+    }
+   ]
+  },
+  {
+   "league": {
+    "id": 5,
+    "name": "UEFA Nations League",
+    "type": "Cup",
+    "logo": "https://media.api-sports.io/football/leagues/5.png"
+   },
+   "country": {
+    "name": "World",
+    "code": null,
+    "flag": null
+   },
+   "seasons": [
+    {
+     "year": 2026,
+     "start": "2026-09-24",
+     "end": "2026-11-17",
+     "current": true,
+     "coverage": {
+      "fixtures": {
+       "events": true,
+       "lineups": true,
+       "statistics_fixtures": true,
+       "statistics_players": true
+      },
+      "standings": true,
+      "players": true,
+      "top_scorers": true,
+      "top_assists": true,
+      "top_cards": true,
+      "injuries": false,
+      "predictions": true,
+      "odds": true
+     }
+    }
+   ]
+  }
+ ]
+}

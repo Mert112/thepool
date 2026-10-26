@@ -1,14 +1,14 @@
-# The Pool — one ESPN sync pass (fixtures, live scores, box scores, squads, settlement).
+# The Pool — one API-Football sync pass (fixtures, live details, squads, odds, settlement).
 # Installed by deploy/setup-sync.sh; triggered every minute by thepool-sync.timer.
 [Unit]
-Description=The Pool ESPN sync
+Description=The Pool API-Football sync
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=/root/thepool/sync
-ExecStart=/usr/bin/node /root/thepool/sync/espn-sync.mjs
+ExecStart=/usr/bin/node /root/thepool/sync/api-football.mjs
 TimeoutStartSec=240
 Environment=NODE_NO_WARNINGS=1
 StateDirectory=thepool-sync

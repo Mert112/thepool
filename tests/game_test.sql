@@ -255,6 +255,10 @@ select test_as('11111111-1111-1111-1111-111111111111');
 select rpc_save_calls(:'card2_id', '[{"call_type":"scorer","player_id":5,"stake":5},{"call_type":"winner","team_id":64,"stake":10}]');
 select test_reset();
 update matches set utc_date = now() - interval '3 hours' where id = 1001;
+-- the provider's fixture detail: line-ups but no events, which is what a goalless, cardless game
+-- looks like. It is the line-ups that make the goalscorer call judgeable — without them `0024`
+-- voids it instead of scoring it a miss.
+insert into player_stats values (1001, 5, 'app', 1), (1001, 1, 'app', 1);
 update matches set status = 'FINISHED', home_score = 0, away_score = 0, ft_home = 0, ft_away = 0, provider_updated = now() where id = 1001;
 select process_match_updates();
 do $$ begin
