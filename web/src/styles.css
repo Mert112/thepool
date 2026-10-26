@@ -314,3 +314,83 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 .market.dropped { border-color: var(--magenta); border-style: dashed; }
 .dropped-flag { font-size: 12px; font-weight: 700; color: var(--magenta); margin-bottom: 10px; }
 .scroll-x { overflow-x: auto; }
+
+/* the leaderboard grid lives here, so a phone can restate it */
+.lb { grid-template-columns: 48px 40px minmax(140px, 1fr) 100px 90px 170px 90px; }
+.lb.crew { grid-template-columns: 30px 32px minmax(0, 1fr) 78px 72px 62px; }
+
+/* prediction history: one row per past card, expanding to every call it carried */
+.hist { border-bottom: 1px solid var(--raise); }
+.hist-head { display: grid; grid-template-columns: minmax(0, 1fr) 72px 24px; gap: 10px; align-items: center;
+  width: 100%; text-align: left; background: transparent; border: 0; padding: 12px 0; color: inherit; }
+.hist-head:hover .hist-tie b { color: var(--lime); }
+.hist-tie { min-width: 0; display: block; font-size: 14px; }
+.hist-tie .num { font-size: 17px; margin: 0 6px; }
+.hist-sub { display: block; margin-top: 3px; }
+.hist-pts { font-size: 19px; text-align: right; }
+.hist-caret { font-family: var(--display); font-size: 20px; color: var(--mute); text-align: center; }
+.hist-calls { padding: 4px 0 14px; animation: slide-down 0.2s var(--ease) both; }
+.hist-call { display: grid; grid-template-columns: minmax(0, 1fr) 72px 52px; gap: 10px; align-items: center;
+  padding: 7px 0 7px 12px; border-left: 2px solid var(--raise); }
+.hist-call .num { font-size: 15px; }
+.explainer { max-width: 62ch; }
+
+/* ===========================================================================
+   Phones. One column under 700px, thumb-sized controls, and nothing that
+   makes the page itself scroll sideways.
+   =========================================================================== */
+html, body { overflow-x: hidden; }
+img, svg, video { max-width: 100%; }
+.input, .select, .textarea { max-width: 100%; }
+
+@media (max-width: 700px) {
+  .wrap { padding: 0 14px 96px; }
+  .grid.two, .grid.cards { grid-template-columns: 1fr; }
+  .panel { padding: 16px 14px; border-radius: 12px; }
+
+  /* nav: brand and account on one line, the links on their own scrolling row */
+  .topbar { gap: 10px; padding: 14px 0 10px; margin-bottom: 16px; }
+  .brand { font-size: 24px; }
+  .topbar .me { gap: 8px; font-size: 12px; }
+  .nav { order: 3; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { flex: none; padding: 9px 13px; }
+
+  /* every control is at least a thumb tall */
+  .btn, .pill, .opt, .boost, .choice, .stepper button, .switch { min-height: 44px; }
+  .btn { padding: 12px 16px; }
+  .btn.tiny-btn, .btn.ghost.tiny { min-height: 36px; padding: 8px 12px; }
+  .chip { min-height: 36px; }
+  .opt { flex: 1 1 100%; }
+  .stepper button { width: 48px; height: 48px; }
+
+  /* the board: the fixture and its button, nothing else */
+  .board-row { grid-template-columns: 58px minmax(0, 1fr) auto; gap: 0 10px; padding: 12px 0; }
+  .board-head { display: none; }
+  .board-row .tie { flex-wrap: wrap; gap: 4px 8px; font-size: 14px; }
+  .board-row .score { font-size: 18px; }
+
+  /* tables stack instead of scrolling sideways */
+  .lb { grid-template-columns: 34px 30px minmax(0, 1fr) 64px !important; }
+  .lb .hide-s { display: none; }
+  .lb-wide { min-width: 0 !important; }
+
+  .hist-head { grid-template-columns: minmax(0, 1fr) 60px 20px; }
+  .hist-call { grid-template-columns: minmax(0, 1fr) 62px 44px; gap: 6px; }
+
+  /* the slip: the picks, then a full-width save */
+  .slip { padding: 12px 14px; gap: 10px; margin-left: -14px; margin-right: -14px; }
+  .slip .total { font-size: 22px; }
+  .slip .btn.big { flex: 1 1 100%; text-align: center; }
+
+  .market { padding: 16px 14px; }
+  .market .pts { font-size: 24px; }
+  h1.display { font-size: 34px; }
+  .scoreline { font-size: 56px; }
+  .modal { padding: 18px 16px; border-radius: 14px; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .album { grid-template-columns: 110px repeat(auto-fit, minmax(38px, 1fr)) !important; }
+  .brag .display { font-size: 26px; }
+  .login .left, .login .right { padding: 30px 16px; }
+  .teaser { flex-wrap: wrap; }
+}

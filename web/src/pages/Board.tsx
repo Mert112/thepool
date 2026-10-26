@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { getBoard, getCompetitions, getMarkets, openCard, getMyCrews, type BoardRow, type Market } from "../lib/api";
-import { useLoad, useNow } from "../lib/auth";
+import { getBoard, getCompetitions, getMarkets, getMyCardMatches, openCard, getMyCrews, type BoardRow, type Market } from "../lib/api";
+import { useAuth, useLoad, useNow } from "../lib/auth";
 import { liveClock, offered } from "../lib/calls";
 import { countdown, fmtDay, fmtTime, soon } from "../lib/format";
 import { Empty, ErrorBox, Modal } from "../components/ui";
@@ -9,12 +9,14 @@ import { Empty, ErrorBox, Modal } from "../components/ui";
 export default function Board() {
   const nav = useNavigate();
   const now = useNow();
+  const { session } = useAuth();
+  const uid = session!.user.id;
   const [phase, setPhase] = useState<"live" | "upcoming" | "settled">("upcoming");
   const [league, setLeague] = useState("ALL");
   const [creating, setCreating] = useState<BoardRow | null>(null);
   const { data: meta } = useLoad(async () => {
-    const [comps, markets] = await Promise.all([getCompetitions(), getMarkets()]);
-    return { comps, markets };
+    const [comps, markets, mine] = await Promise.all([getCompetitions(), getMarkets(), getMyCardMatches(uid)]);
+    return { comps, markets, mine };
   }, []);
   const { data: board, error, loading, reload } = useLoad(() => getBoard(), []);
 
@@ -27,9 +29,11 @@ export default function Board() {
   const rows = rowsAll.filter((r) => r.phase === phase).filter((r) => league === "ALL" || r.competition_code === league);
   if (phase === "settled") rows.reverse();
   const allMarkets = meta?.markets ?? [];
+  // a match this player already has a card on reads "Your card is in", not "Join"
+  const mine = (id: number) => !!meta?.mine.has(id);
 
   const go = (r: BoardRow) => {
-    if (r.phase === "upcoming") { if (r.card_count > 0) nav(`/match/${r.match_id}`); else setCreating(r); }
+    if (r.phase === "upcoming") { if (r.card_count > 0 || mine(r.match_id)) nav(`/match/${r.match_id}`); else setCreating(r); }
     else if (r.public_card_id) nav(`/card/${r.public_card_id}/live`);
     else nav(`/match/${r.match_id}`);
   };
@@ -84,6 +88,7 @@ export default function Board() {
               <b>{r.away_team}</b>
             </div>
             <div className="hide-m tiny" style={{ fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: r.card_count ? "var(--text-2)" : "var(--mute)" }}>
+              {mine(r.match_id) && <div className="lime" style={{ marginBottom: 2 }}>Your card is in</div>}
               {r.public_card_mode ? (r.public_card_mode === "complex" ? `Complex · ${mk.length} calls` : `Simple · ${mk.filter((k) => k.simple).length} calls`) : r.card_count ? `${r.card_count} crew card${r.card_count > 1 ? "s" : ""}` : "No card yet"}
             </div>
             <div className="hide-m small">
@@ -92,8 +97,8 @@ export default function Board() {
             </div>
             <div className="hide-m small num" style={{ color: live || soon(r.utc_date, now) ? "var(--magenta)" : "var(--soft)" }}>{live ? "In play" : settled ? "Settled" : countdown(r.utc_date, now)}</div>
             <div style={{ textAlign: "right" }}>
-              <button className={"btn" + (r.phase === "upcoming" && r.card_count ? " primary" : "")} onClick={() => go(r)}>
-                {live ? "Watch" : settled ? "Recap" : r.card_count ? "Join" : "Open"}
+              <button className={"btn" + (r.phase === "upcoming" && r.card_count && !mine(r.match_id) ? " primary" : "")} onClick={() => go(r)}>
+                {live ? "Watch" : settled ? "Recap" : mine(r.match_id) ? "Your card is in" : r.card_count ? "Join" : "Open"}
               </button>
             </div>
           </div>

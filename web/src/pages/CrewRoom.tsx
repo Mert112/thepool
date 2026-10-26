@@ -82,21 +82,21 @@ export default function CrewRoom() {
 
         <div className="panel">
           <div className="eyebrow" style={{ marginBottom: 8 }}>Season table</div>
-          <div className="trow thead" style={{ gridTemplateColumns: "30px 32px minmax(0,1fr) 78px 72px 62px" }}><span>#</span><span></span><span>Player</span><span>Cards</span><span>Hit rate</span><span style={{ textAlign: "right" }}>Pts</span></div>
+          <div className="trow thead lb crew"><span>#</span><span></span><span>Player</span><span className="hide-s">Cards</span><span className="hide-s">Hit rate</span><span style={{ textAlign: "right" }}>Pts</span></div>
           {table.length === 0 && <div className="muted small" style={{ padding: "10px 0" }}>Nothing settled yet. The table fills after the first full time.</div>}
           {table.map((r, i) => (
-            <div key={r.user_id} className={"trow" + (r.user_id === uid ? " me" : "")} style={{ gridTemplateColumns: "30px 32px minmax(0,1fr) 78px 72px 62px" }}>
+            <div key={r.user_id} className={"trow lb crew" + (r.user_id === uid ? " me" : "")}>
               <span className="pos">{i + 1}</span>
               <Avatar name={r.display_name} me={r.user_id === uid} />
               <span className="small">{nameOf(r.user_id)} {i === 0 && <span className="tag solid" style={{ marginLeft: 6 }}>Leader</span>}</span>
-              <span className="small muted">{r.cards} cards</span>
-              <span className="small muted">{r.hit_rate}%</span>
+              <span className="small muted hide-s">{r.cards} cards</span>
+              <span className="small muted hide-s">{r.hit_rate}%</span>
               <span className="ptsc">{r.points}</span>
             </div>
           ))}
           {members.filter((m) => !table.some((r) => r.user_id === m.user_id)).map((m) => (
-            <div key={m.user_id} className="trow" style={{ gridTemplateColumns: "30px 32px minmax(0,1fr) 78px 72px 62px" }}>
-              <span className="pos">–</span><Avatar name={m.profiles?.display_name} me={m.user_id === uid} /><span className="small muted">{nameOf(m.user_id)}</span><span className="small muted">0 cards</span><span></span><span className="ptsc" style={{ color: "var(--mute)" }}>0</span>
+            <div key={m.user_id} className="trow lb crew">
+              <span className="pos">–</span><Avatar name={m.profiles?.display_name} me={m.user_id === uid} /><span className="small muted">{nameOf(m.user_id)}</span><span className="small muted hide-s">0 cards</span><span className="hide-s"></span><span className="ptsc" style={{ color: "var(--mute)" }}>0</span>
             </div>
           ))}
         </div>

@@ -221,5 +221,24 @@ do $$ begin
   assert (select count(*) from stickers where competition_code = 'FRI' and call_type = 'red') = 1, 'a sticker for the red';
 end $$;
 
+-- --- every call says what it means, and the history reads back ---------------------
+do $$ declare h jsonb; c jsonb; begin
+  assert (select count(*) from markets where explainer is null or length(explainer) < 30) = 0, 'every market has an explainer';
+  assert (select explainer from markets where call_type = 'spread') like 'Your team starts the match with a virtual head start%', 'the handicap explainer';
+  perform test_as('aaaaaaaa-0000-0000-0000-000000000001');
+  h := my_history(50);
+  assert jsonb_array_length(h) >= 5, format('history has cards: %s', jsonb_array_length(h));
+  -- the oldest-but-settled Fiji card: the scorer was void, the yellow missed, the result landed
+  select x into c from jsonb_array_elements(h) x where (x->>'match_id')::int = 8000;
+  assert c is not null, 'the 8000 card is in the history';
+  assert c->>'home' = 'Fiji' and (c->>'home_score')::int = 1, 'the history carries the match';
+  assert (select count(*) from jsonb_array_elements(c->'calls')) = 3, 'three calls on it';
+  assert (select k->>'result' from jsonb_array_elements(c->'calls') k where k->>'call_type' = 'winner') = 'hit', 'the result hit';
+  assert (select k->>'label' from jsonb_array_elements(c->'calls') k where k->>'call_type' = 'winner') = 'Fiji', 'and reads as the team name';
+  assert (select k->>'result' from jsonb_array_elements(c->'calls') k where k->>'call_type' = 'scorer') = 'void', 'the unused sub is void';
+  assert (select k->>'title' from jsonb_array_elements(c->'calls') k where k->>'call_type' = 'red') is null, 'no red on that card';
+  perform test_reset();
+end $$;
+
 select 'FOOTBALL TESTS PASSED' as result;
 rollback;

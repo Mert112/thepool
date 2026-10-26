@@ -34,21 +34,19 @@ export default function Table() {
       {loading && !rows && <Spinner />}
       {rows && rows.length === 0 && <Empty>Nothing settled in this scope yet.</Empty>}
       {rows && rows.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 720 }}>
-            <div className="trow thead" style={{ gridTemplateColumns: "48px 40px minmax(200px,1fr) 100px 90px 170px 90px" }}><span>#</span><span></span><span>Player</span><span>Cards</span><span>Hit rate</span><span>Best call</span><span style={{ textAlign: "right" }}>Points</span></div>
-            {rows.map((r, i) => { const mv = move(r, i); return (
-              <div key={r.user_id} className={"trow" + (r.user_id === uid ? " me" : "")} style={{ gridTemplateColumns: "48px 40px minmax(200px,1fr) 100px 90px 170px 90px" }}>
-                <span><span className="pos">{i + 1}</span> <span className={"move" + (mv > 0 ? " up" : mv < 0 ? " down" : "")}>{mv > 0 ? `▲${mv}` : mv < 0 ? `▼${-mv}` : "–"}</span></span>
-                <Avatar name={r.display_name} me={r.user_id === uid} />
-                <span className="small" style={{ fontWeight: 700 }}>{r.user_id === uid ? "You" : r.display_name ?? "Player"}</span>
-                <span className="small muted">{r.cards} cards</span>
-                <span className="small muted">{r.hit_rate}%</span>
-                <span className="small muted">{r.best_call ? `${short(r.best_call)} · ${r.best_points}` : "—"}</span>
-                <span className="ptsc">{r.points}</span>
-              </div>
-            ); })}
-          </div>
+        <div>
+          <div className="trow thead lb"><span>#</span><span></span><span>Player</span><span className="hide-s">Cards</span><span className="hide-s">Hit rate</span><span className="hide-s">Best call</span><span style={{ textAlign: "right" }}>Points</span></div>
+          {rows.map((r, i) => { const mv = move(r, i); return (
+            <div key={r.user_id} className={"trow lb" + (r.user_id === uid ? " me" : "")}>
+              <span><span className="pos">{i + 1}</span> <span className={"move" + (mv > 0 ? " up" : mv < 0 ? " down" : "")}>{mv > 0 ? `▲${mv}` : mv < 0 ? `▼${-mv}` : "–"}</span></span>
+              <Avatar name={r.display_name} me={r.user_id === uid} />
+              <span className="small" style={{ fontWeight: 700 }}>{r.user_id === uid ? "You" : r.display_name ?? "Player"}</span>
+              <span className="small muted hide-s">{r.cards} cards</span>
+              <span className="small muted hide-s">{r.hit_rate}%</span>
+              <span className="small muted hide-s">{r.best_call ? `${short(r.best_call)} · ${r.best_points}` : "—"}</span>
+              <span className="ptsc">{r.points}</span>
+            </div>
+          ); })}
         </div>
       )}
     </div>

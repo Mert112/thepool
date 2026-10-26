@@ -1,6 +1,6 @@
 // §5.3 The match page: everything about a card before you play it
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { getCardPlayers, getCardsForMatch, getCrowd, getMarkets, getMatch, getMyCrews, getMyEntry, type Card } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, plural, soon } from "../lib/format";
@@ -13,6 +13,9 @@ export default function Match() {
   const matchId = Number(id);
   const nav = useNavigate();
   const now = useNow();
+  const loc = useLocation();
+  // the receipt FillCard hands over when it redirects here after a save
+  const justSaved = (loc.state as { saved?: { n: number; calls: string[] } } | null)?.saved ?? null;
   const { session } = useAuth();
   const [creatingFor, setCreatingFor] = useState<string | null | undefined>(undefined); // undefined = closed, null = public
   const [selected, setSelected] = useState<string | null>(null);
@@ -38,6 +41,17 @@ export default function Match() {
   return (
     <div className="grid two">
       <div className="stack">
+        {justSaved && (
+          <div className="banner ok" role="status">
+            <div>
+              <b>Saved ✓</b>{" "}
+              {justSaved.n === 0
+                ? "Your card is withdrawn — you have no calls on this match."
+                : <>{justSaved.n} {justSaved.n === 1 ? "call is" : "calls are"} on your card: {justSaved.calls.join(" · ")}.</>}
+            </div>
+            <button className="btn ghost tiny-btn" onClick={() => nav(loc.pathname, { replace: true })}>Dismiss</button>
+          </div>
+        )}
         <div className="panel">
           <div className="eyebrow">{match.competition_name} · {fmtWhen(match.utc_date)}</div>
           {match.event_name && <div className="tiny muted" style={{ marginTop: 4 }}>{match.event_name}</div>}
@@ -82,7 +96,7 @@ export default function Match() {
               const t = topCrowd(k.call_type);
               return (
                 <div key={k.call_type} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px minmax(0,1.2fr)", gap: 14, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--raise)" }}>
-                  <div><b>{k.title}</b><div className="tiny muted">{k.description}</div></div>
+                  <div><b>{k.title}</b><div className="tiny muted explainer">{k.explainer}</div></div>
                   <div className="num lime" style={{ fontSize: 20, whiteSpace: "nowrap" }}>{pointsRange(k, match)}</div>
                   <div className="small muted">{t ? <span>{t.pct}% · {t.label}</span> : <span className="faint">no calls yet</span>}<Pips n={Math.min(8, k.points)} /></div>
                 </div>

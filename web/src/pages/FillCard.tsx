@@ -8,13 +8,15 @@
 // what the database kept, so "I filled it in" and "it says No pick" can never disagree again.
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getCard, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, saveCalls, setBoost, type Call, type CallType, type Market } from "../lib/api";
+import { getCard, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, saveCalls, setBoost, type Call, type CallType, type Market, type Player } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, soon } from "../lib/format";
 import { clashes, pointsRange, isPlayerMarket, lineOf, offered, pickText as describe, pointsFor, priceOf, priceOfCall, signed, spreadFor, teamName as nameOf } from "../lib/calls";
 import { Bar, Empty, ErrorBox, Pips, Spinner } from "../components/ui";
 
 type Picks = Partial<Record<CallType, Call>>;
+
+const playerNameOf = (squads: Player[]) => (pid: number | null | undefined) => squads.find((p) => p.id === pid)?.name ?? "";
 
 export default function FillCard() {
   const { id } = useParams();
@@ -30,7 +32,7 @@ export default function FillCard() {
   const [clash, setClash] = useState<{ dropped: CallType[]; by: CallType; before: Picks; boost: CallType | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const { data, error, loading, reload } = useLoad(async () => {
+  const { data, error, loading } = useLoad(async () => {
     const card = await getCard(id!);
     if (!card) throw new Error("This card does not exist or is not yours to see.");
     const match = await getMatch(card.match_id);
@@ -98,7 +100,11 @@ export default function FillCard() {
       }
       setSaved({ calls: stored });
       setClash(null);
-      reload();
+      // §3: land back on the match page rather than sitting on the form, with the receipt in hand
+      nav(`/match/${data.match.match_id}`, {
+        replace: true,
+        state: { saved: { n: stored.length, calls: stored.map((c) => `${titleOf(c.call_type)} — ${describe(c, data.match, playerNameOf(data.squads))}`) } },
+      });
     } catch (e: any) { setErr(e.message ?? String(e)); }
     setSaving(false);
   };
@@ -108,7 +114,7 @@ export default function FillCard() {
   const { card, match, markets, crowd, squads } = data!;
   if (!match) return <Empty>Fixture missing.</Empty>;
   const teamName = (t: number) => nameOf(match, t);
-  const playerName = (pid: number | null | undefined) => squads.find((p) => p.id === pid)?.name ?? "";
+  const playerName = playerNameOf(squads);
   const crowdFor = (ct: CallType) => crowd.filter((c) => c.call_type === ct).sort((a, b) => b.n - a.n);
   const pickText = (c: Call) => describe(c, match, playerName);
   const sides = [match.home_team_id, match.away_team_id];
@@ -175,7 +181,7 @@ export default function FillCard() {
               <div key={k.call_type} className={"market" + (on ? " on" : "") + (dropped ? " dropped" : "")} style={{ "--i": i } as CSSProperties}>
                 {dropped && <div className="dropped-flag">Removed — it clashed with your “{titleOf(clash!.by)}” pick. Nothing here will be saved until you pick again.</div>}
                 <div className="head">
-                  <div><h3 className="display" style={{ margin: 0 }}>{k.title}</h3><div className="small muted">{k.description}</div></div>
+                  <div><h3 className="display" style={{ margin: 0 }}>{k.title}</h3><div className="small muted explainer">{k.explainer}</div></div>
                   <div style={{ textAlign: "right" }}>
                     <div className="pts">{on ? ptsOf(k) : range(k)}</div><Pips n={Math.min(8, Math.round((k.default_price ?? 2) + 0.5))} />
                     {on && editable && <button className="remove-call" onClick={() => set(k.call_type, null)}>Remove</button>}

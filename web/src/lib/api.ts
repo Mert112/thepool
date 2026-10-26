@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 
 // The Pool is football only (0017). These are the eight live markets, plus the two kept disabled.
 export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "spread";
-export type Market = { options: string[] | null; default_price: number | null; option_mult: Record<string, number> | null; call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
+export type Market = { options: string[] | null; default_price: number | null; option_mult: Record<string, number> | null; call_type: CallType; title: string; short: string; description: string; explainer: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
 export type BoardRow = {
   match_id: number; competition_code: string; competition_name: string; season: string | null; utc_date: string; status: string; minute: number | null;
   home_score: number | null; away_score: number | null; ft_home: number | null; ft_away: number | null; duration: string | null;
@@ -197,6 +197,27 @@ export async function myStats() {
   if (error) fail(error);
   return data as { points: number; rank: number | null; players: number; cards: number; hit_rate: number; streak: number; competitions: Array<{ code: string; name: string; points: number; rank: number }>; recent: Array<{ match_id: number; home: string; away: string; home_score: number; away_score: number; utc_date: string; points: number; hits: number; mode: string; competition_code: string }> };
 }
+// the matches this player already has a card on, so the board can say so
+export async function getMyCardMatches(userId: string): Promise<Set<number>> {
+  const { data, error } = await supabase.from("entries").select("cards!inner(match_id)").eq("user_id", userId);
+  if (error) fail(error);
+  return new Set((data ?? []).map((r: any) => r.cards?.match_id as number).filter((n) => typeof n === "number"));
+}
+
+// §5.8 Prediction history: every card played, newest first, with each call and how it ended
+export type HistoryCall = { call_type: CallType; title: string; label: string; result: "pending" | "hit" | "miss" | "void"; points: number };
+export type HistoryCard = {
+  entry_id: string; card_id: string; match_id: number; mode: "simple" | "complex"; crew: string | null;
+  card_status: Card["status"]; competition: string; utc_date: string;
+  home: string; away: string; home_score: number | null; away_score: number | null;
+  points: number; hits: number; calls: HistoryCall[];
+};
+export async function myHistory(limit = 40): Promise<HistoryCard[]> {
+  const { data, error } = await supabase.rpc("my_history", { p_limit: limit });
+  if (error) fail(error);
+  return (data ?? []) as HistoryCard[];
+}
+
 export async function getStickers() {
   const { data, error } = await supabase.from("stickers").select("competition_code, season, call_type, earned_at");
   if (error) fail(error);
