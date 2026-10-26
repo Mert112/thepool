@@ -1,11 +1,13 @@
 # The Pool — thepool.today
 
-A free-to-play sports prediction game — football, basketball, American football, baseball, ice hockey, tennis and MMA. People call what will happen in a game, score points for being right, and argue about it with the same crew every week. This repo is the whole product: database, jobs, email, and the web app.
+A free-to-play **football** prediction game. People call what will happen in a match, score points for being right, and argue about it with the same crew every week. This repo is the whole product: database, jobs, email, and the web app.
+
+The board carried seven sports for a while; `0017_football_only.sql` withdrew all of them. Football is the whole game.
 
 ```
 supabase/migrations/   schema, game rules, security, read models, notifications, cron
 supabase/functions/    send-notifications (Deno edge function); sync-fixtures · sync-live are the retired football-data.org sync
-sync/                  espn-sync.mjs — every sport's fixtures, live scores, box scores and squads (runs on the server)
+sync/                  espn-sync.mjs — fixtures, live scores, goals/cards and squads (runs on the server)
 web/                   React + Vite app (Vercel / Cloudflare Pages / Netlify)
 tests/                 end-to-end rules test that runs on plain Postgres
 ```
@@ -20,11 +22,12 @@ tests/                 end-to-end rules test that runs on plain Postgres
 | Read models | `0004_views.sql` | `v_board`, `leaderboard()`, `crew_score()`, `my_stats()` |
 | Notifications | `0005_notifications.sql` | triggers + enqueue functions for the six email types (§7 of the design doc) |
 | Cron | `0006_cron.sql` | pg_cron schedules calling the edge functions through pg_net |
-| Every sport | `0008`–`0010` | sports, ESPN league per competition, per-sport markets and settlement, player box-score stats |
-| Sync | `sync/espn-sync.mjs` | systemd timer, every minute: fixtures a week out (every 30 min), live scoreboards, box scores for games being played, squads for the next 36 h, then settlement |
+| Multi-sport era | `0008`–`0016` | sports, ESPN leagues, per-sport markets, sportsbook pricing — **withdrawn by `0017`** |
+| Football only | `0017` | every other sport's data, markets and code paths removed; football's card is all that is left |
+| Sync | `sync/espn-sync.mjs` | systemd timer, every minute: fixtures a week out (every 30 min), live scoreboards, goals and cards for matches being played, squads for the board, then settlement |
 | Mail | `send-notifications` | drains the queue through Resend |
 
-Scoring follows the design doc exactly: winner 1 · draw 3 · scoreline 8 · goalscorer 7 · assist 9 · yellow 6 · red 10. Everything settles on the 90-minute state (events at minute ≤ 90 + stoppage only). One boost per matchday doubles one call, no downside. "Best on the pitch" (8) exists in the schema but is **disabled** for v1 because football-data.org does not publish an official man of the match; flip `markets.enabled` when a source exists.
+Everything settles on the 90-minute state (events at minute ≤ 90 + stoppage only). "Best on the pitch" exists in the schema but is **disabled**: no feed publishes an official man of the match. Flip `markets.enabled` when a source exists.
 
 ## First-time setup (about an hour)
 
@@ -81,29 +84,23 @@ Caddy serves `thepool.today` and `www.thepool.today` with automatic HTTPS; ports
 - `thepool.today` → A record to the server's IP; `www` → CNAME to `thepool.today`.
 - Resend's DKIM/SPF/DMARC records from step 4.
 
-## Markets and points (sportsbook logic)
-A landed call pays **10 × its decimal price**, locked in when the call is saved (an unchanged pick keeps its price; a changed one takes the current price), doubled by the boost. Prices are DraftKings' via ESPN, frozen at the start; with no stake to lose, this gives every pick the same expected value, so the skill is beating the price. A market without a feed price pays its standard price (`markets.default_price`).
+## The card
 
-| Sport | Simple card | Complex card adds |
-|---|---|---|
-| Football | result (home / draw / away, 3-way), over/under | handicap, exact score, scorer, assist, yellow, red |
-| Basketball | winner, over/under | spread, player line (points / rebounds / assists), top scorer |
-| American football | winner, over/under | spread, player line (yards / receptions), touchdown scorer |
-| Baseball | winner, over/under | run line, home run |
-| Ice hockey | winner, over/under | puck line, exact score, goalscorer |
-| Tennis | winner, goes the distance | exact set score |
-| MMA | winner, how they win (fighter + KO/TKO · submission · decision) | the round |
+| Card | Calls |
+|---|---|
+| Simple | the result (home / draw / away), over or under the goals line |
+| Complex | adds the handicap, the exact scoreline, a goalscorer, an assist, a yellow and a red |
 
-Rules: calls that cannot all land are refused (no hedging); a player who never took part is void; pushes (a total or spread landing exactly on the line) are void; football's result is 3-way, so a draw beats both sides. Player lines come from ESPN's prop feed (lines only, so they pay the standard −110). KO and TKO are one option because ESPN records them as one result, as sportsbooks' method-of-victory markets do.
+The red card takes an optional 15-minute window for a bigger return. Rules: calls that cannot all land are refused (no hedging); a player who never took part is void; a total or handicap landing exactly on the line is a push and is void; the result is 3-way, so a draw beats both sides.
 
-## ESPN sync (all sports)
+## ESPN sync
 ```
 cp sync/.env.example sync/.env    # SUPABASE_URL and a secret key (Supabase → Settings → API keys)
 bash deploy/setup-sync.sh         # installs the thepool-sync systemd timer
 journalctl -u thepool-sync -f     # one line per pass
 node sync/espn-sync.mjs --dry     # fetch and parse without writing
 ```
-ESPN's `site.api.espn.com` feeds are public but unofficial: no key, no contract, and they can change without notice. The sync is polite (about 200 small requests every 30 minutes, a handful per minute otherwise). Team sports only accept single-day `dates=` queries; tennis and fight nights accept ranges. Competitions are rows in `pool.competitions` (`espn_path`, optional `espn_params`) — add a league by inserting one.
+ESPN's `site.api.espn.com` feeds are public but unofficial: no key, no contract, and they can change without notice. The sync is polite (about 150 small requests every 30 minutes, a handful per minute otherwise). Football scoreboards only accept single-day `dates=` queries. Competitions are rows in `pool.competitions` (`espn_path`, optional `espn_params`) — add a league by inserting one.
 
 ## Provider notes (football-data.org, retired)
 - Free tier: 10 requests/minute, 12 competitions (exactly the ones in the design doc), match detail includes goals (with assists) and bookings. The live sync is 1 list call + up to 4 detail calls per minute and sits out the two minutes an hour the fixtures sync uses.
@@ -112,19 +109,12 @@ ESPN's `site.api.espn.com` feeds are public but unofficial: no key, no contract,
 - If the free tier turns out to omit bookings or assists on your key, the event calls will simply never land; check one finished match's JSON at `/v4/matches/{id}` before launch.
 
 ## Running the rules test locally
-Needs a plain Postgres 16:
+Needs a plain Postgres 17 and a role that can create databases:
 ```
-createdb pool
-psql pool -f tests/local_auth_stub.sql          # stand-in for Supabase's auth schema
-for f in supabase/migrations/000[1-5]*.sql supabase/migrations/00{07,08,09,10,11,12,13,14}*.sql; do psql -v ON_ERROR_STOP=1 pool -f $f; done
-psql pool -f tests/game_test.sql                 # prints ALL TESTS PASSED
-psql pool -f tests/multisport_test.sql           # prints MULTISPORT TESTS PASSED
+bash tests/run.sh      # rebuilds the db from every migration, then runs the tests
 ```
-The test walks a full card: crew creation, RLS, filling, the boost rule, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, a void winner on a 0–0, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
+`tests/game_test.sql` walks a full card: crew creation, RLS, filling, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
+`tests/football_test.sql` covers the rest of the card: the 3-way result, the goals line, the handicap, pushes, the red card's time window, non-runners and withdrawn cards.
 
 ## Not in v1 (by design)
-Real money, odds, native apps, push/WhatsApp, chat beyond the crew feed, sticker trading, social login, public profiles.
-
-## Open decisions carried over from the design doc
-- Whether the boost should carry downside (currently pure upside, FPL-chip style).
-- "Best on the pitch" needs a data source; until then a simple card is two calls (winner + draw).
+Real money, sports other than football, native apps, push/WhatsApp, chat beyond the crew feed, sticker trading, social login, public profiles.

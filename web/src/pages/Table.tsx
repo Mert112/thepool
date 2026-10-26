@@ -1,19 +1,18 @@
 // §5.8 The table: overall, per crew, this week, per competition — with rank movement
 import { useState } from "react";
-import { getCompetitions, getMarkets, getMyCrews, getSports, leaderboard } from "../lib/api";
+import { getCompetitions, getMarkets, getMyCrews, leaderboard } from "../lib/api";
 import { useAuth, useLoad } from "../lib/auth";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 
-type Scope = { id: string; label: string; scope: "overall" | "crew" | "week" | "competition" | "sport"; key?: string };
+type Scope = { id: string; label: string; scope: "overall" | "crew" | "week" | "competition"; key?: string };
 
 export default function Table() {
   const { session } = useAuth();
   const uid = session!.user.id;
   const [sel, setSel] = useState("overall");
   const { data: meta } = useLoad(async () => {
-    const [crews, comps, markets, sports] = await Promise.all([getMyCrews(), getCompetitions(), getMarkets(), getSports()]);
+    const [crews, comps, markets] = await Promise.all([getMyCrews(), getCompetitions(), getMarkets()]);
     const scopes: Scope[] = [{ id: "overall", label: "Overall", scope: "overall" }, ...crews.map((c) => ({ id: "crew:" + c.id, label: c.name, scope: "crew" as const, key: c.id })), { id: "week", label: "This week", scope: "week" },
-      ...sports.map((s) => ({ id: "sport:" + s.code, label: s.name, scope: "sport" as const, key: s.code })),
       ...comps.map((c) => ({ id: "comp:" + c.code, label: c.name, scope: "competition" as const, key: c.code }))];
     return { scopes, markets };
   }, []);

@@ -66,7 +66,7 @@ export default function CrewRoom() {
               <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: "1px solid var(--raise)", flexWrap: "wrap" }}>
                 <div>
                   <b>{m!.home_team} v {m!.away_team}</b>
-                  <div className="tiny muted">{m!.competition_name} · {markets.filter((k) => k.sport === m!.sport && (c.mode === "complex" || k.simple)).length} calls · {upcoming ? `locks ${countdown(m!.utc_date, now)}` : m!.phase === "live" ? "in play" : "settling"}</div>
+                  <div className="tiny muted">{m!.competition_name} · {markets.filter((k) => c.mode === "complex" || k.simple).length} calls · {upcoming ? `locks ${countdown(m!.utc_date, now)}` : m!.phase === "live" ? "in play" : "settling"}</div>
                   <div className="small" style={{ marginTop: 4 }}><span className={filled < members.length ? "magenta" : "lime"}>{filled} of {members.length} filled in</span></div>
                 </div>
                 <div className="row-of">

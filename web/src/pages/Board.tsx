@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { getBoard, getCompetitions, getLiveCounts, getMarkets, getSports, openCard, getMyCrews, type BoardRow, type Market } from "../lib/api";
+import { useNavigate } from "react-router-dom";
+import { getBoard, getCompetitions, getMarkets, openCard, getMyCrews, type BoardRow, type Market } from "../lib/api";
 import { useLoad, useNow } from "../lib/auth";
 import { liveClock, offered } from "../lib/calls";
 import { countdown, fmtDay, fmtTime, soon } from "../lib/format";
@@ -9,17 +9,14 @@ import { Empty, ErrorBox, Modal } from "../components/ui";
 export default function Board() {
   const nav = useNavigate();
   const now = useNow();
-  const [params, setParams] = useSearchParams();
-  const sport = params.get("sport") ?? "ALL";
   const [phase, setPhase] = useState<"live" | "upcoming" | "settled">("upcoming");
   const [league, setLeague] = useState("ALL");
   const [creating, setCreating] = useState<BoardRow | null>(null);
   const { data: meta } = useLoad(async () => {
-    const [sports, comps, markets, liveBySport] = await Promise.all([getSports(), getCompetitions(), getMarkets(), getLiveCounts()]);
-    return { sports, comps, markets, liveBySport };
+    const [comps, markets] = await Promise.all([getCompetitions(), getMarkets()]);
+    return { comps, markets };
   }, []);
-  const { data: board, error, loading, reload } = useLoad(() => getBoard(sport === "ALL" ? undefined : sport), [sport]);
-  const pickSport = (s: string) => { setLeague("ALL"); setParams(s === "ALL" ? {} : { sport: s }, { replace: true }); };
+  const { data: board, error, loading, reload } = useLoad(() => getBoard(), []);
 
   if (error) return <ErrorBox msg={error} />;
   // a game past its start is closed for cards even when the feed has no live data for it yet
@@ -29,8 +26,7 @@ export default function Board() {
   const leagues = ["ALL", ...comps.filter((c) => rowsAll.some((r) => r.competition_code === c.code)).map((c) => c.code)];
   const rows = rowsAll.filter((r) => r.phase === phase).filter((r) => league === "ALL" || r.competition_code === league);
   if (phase === "settled") rows.reverse();
-  const liveTotal = Object.values(meta?.liveBySport ?? {}).reduce((a, b) => a + b, 0);
-  const marketsOf = (s: string) => (meta?.markets ?? []).filter((k) => k.sport === s);
+  const allMarkets = meta?.markets ?? [];
 
   const go = (r: BoardRow) => {
     if (r.phase === "upcoming") { if (r.card_count > 0) nav(`/match/${r.match_id}`); else setCreating(r); }
@@ -40,14 +36,6 @@ export default function Board() {
 
   return (
     <div>
-      <div className="row-of sports" style={{ marginBottom: 14 }}>
-        <button className={"pill" + (sport === "ALL" ? " on" : "")} onClick={() => pickSport("ALL")}>All sports{liveTotal ? <span className="live-n">{liveTotal}</span> : null}</button>
-        {(meta?.sports ?? []).map((s) => {
-          const n = meta?.liveBySport[s.code] ?? 0;
-          return <button key={s.code} className={"pill" + (sport === s.code ? " on" : "")} onClick={() => pickSport(s.code)}>{s.name}{n ? <span className="live-n">{n}</span> : null}</button>;
-        })}
-      </div>
-
       {liveRows.length > 0 && (
         <div className="ticker">
           {liveRows.map((r) => <div key={r.match_id} onClick={() => go(r)} style={{ cursor: "pointer" }}><span className="min">{liveClock(r)}</span><span>{r.home_short ?? r.home_team}</span><span className="sc">{r.home_score ?? 0}–{r.away_score ?? 0}</span><span>{r.away_short ?? r.away_team}</span></div>)}
@@ -79,11 +67,11 @@ export default function Board() {
       {board && rows.length === 0 && <Empty>Nothing here{league !== "ALL" ? " for this competition" : ""}. {phase === "live" ? "No game is in play right now." : phase === "upcoming" ? "Games appear as soon as they are scheduled." : "Settled cards show up here after the final whistle."}</Empty>}
       {rows.map((r, i) => {
         const live = r.phase === "live", settled = r.phase === "settled";
-        const mk = marketsOf(r.sport).filter((k) => offered(k, r));
+        const mk = allMarkets.filter((k) => offered(k, r));
         return (
           <div className="board-row" key={r.match_id} style={{ "--i": i } as CSSProperties}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: live ? "var(--magenta)" : "var(--text)" }}>{live ? <><span className="live-dot" />{liveClock(r)}</> : settled ? (r.sport === "soccer" ? "FT" : "Final") : fmtTime(r.utc_date)}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: live ? "var(--magenta)" : "var(--text)" }}>{live ? <><span className="live-dot" />{liveClock(r)}</> : settled ? "FT" : fmtTime(r.utc_date)}</div>
               <div className="tiny faint">{live ? "" : fmtDay(r.utc_date)}</div>
             </div>
             <div className="hide-m tiny muted" style={{ fontWeight: 700 }}>
@@ -128,9 +116,9 @@ export function CreateCardDialog({ row, onClose, onDone, defaultCrew }: { row: B
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { data, error: loadErr } = useLoad(async () => {
-    const [crews, markets] = await Promise.all([getMyCrews(), getMarkets(row.sport)]);
+    const [crews, markets] = await Promise.all([getMyCrews(), getMarkets()]);
     return { crews, markets: markets.filter((k) => offered(k, row)) };
-  }, [row.sport]);
+  }, [row.match_id]);
   const on = (m: "simple" | "complex") => (data?.markets ?? []).filter((k) => m === "complex" || k.simple);
   const priced = !!row.odds?.provider;
   const create = async () => {

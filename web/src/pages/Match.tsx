@@ -19,7 +19,7 @@ export default function Match() {
 
   const { data, error, loading, reload } = useLoad(async () => {
     const [match, cards, crews] = await Promise.all([getMatch(matchId), getCardsForMatch(matchId), getMyCrews()]);
-    const markets = match ? (await getMarkets(match.sport)).filter((k) => offered(k, match)) : [];
+    const markets = match ? (await getMarkets()).filter((k) => offered(k, match)) : [];
     const cardId = selected ?? cards.find((c) => c.crew_id === null)?.id ?? cards[0]?.id ?? null;
     const [players, crowd, mine] = cardId ? await Promise.all([getCardPlayers(cardId), getCrowd(cardId), getMyEntry(cardId, session!.user.id)]) : [[], [], null];
     return { match, cards, crews, markets, cardId, players, crowd, mine };
@@ -39,7 +39,7 @@ export default function Match() {
     <div className="grid two">
       <div className="stack">
         <div className="panel">
-          <div className="eyebrow">{match.sport_name} · {match.competition_name} · {fmtWhen(match.utc_date)}</div>
+          <div className="eyebrow">{match.competition_name} · {fmtWhen(match.utc_date)}</div>
           {match.event_name && <div className="tiny muted" style={{ marginTop: 4 }}>{match.event_name}</div>}
           <h1 className="display" style={{ margin: "8px 0 14px" }}>{match.home_team} <span className="faint">v</span> {match.away_team}</h1>
           {/* every card on this game, plus a public one if nobody has opened it yet (a crew card must not block it) */}

@@ -1,9 +1,9 @@
 // Thin data layer over Supabase. Every write goes through an rpc_* function in the database.
 import { supabase } from "./supabase";
 
-export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "margin" | "top_scorer" | "sets" | "distance" | "method" | "round" | "spread" | "player_line";
-export type Sport = { code: string; name: string; sort_order: number };
-export type Market = { sport: string; options: string[] | null; default_price: number | null; option_mult: Record<string, number> | null; call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
+// The Pool is football only (0017). These are the eight live markets, plus the two kept disabled.
+export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist" | "yellow" | "red" | "total" | "spread";
+export type Market = { options: string[] | null; default_price: number | null; option_mult: Record<string, number> | null; call_type: CallType; title: string; short: string; description: string; points: number; simple: boolean; enabled: boolean; sort_order: number; settles_on: "event" | "result" };
 export type BoardRow = {
   match_id: number; competition_code: string; competition_name: string; season: string | null; utc_date: string; status: string; minute: number | null;
   home_score: number | null; away_score: number | null; ft_home: number | null; ft_away: number | null; duration: string | null;
@@ -11,14 +11,13 @@ export type BoardRow = {
   away_team_id: number; away_team: string; away_short: string | null; away_crest: string | null;
   public_card_id: string | null; public_card_mode: "simple" | "complex" | null; public_card_status: string | null;
   card_count: number; playing: number; phase: "live" | "upcoming" | "settled";
-  sport: string; sport_name: string; clock: string | null; event_name: string | null; home_periods: number[] | null; away_periods: number[] | null;
-  total_line: number | null; best_of: number | null; result_detail: { winner?: string; method?: string; round?: string; retired?: boolean };
+  clock: string | null; event_name: string | null; total_line: number | null;
+  result_detail: { winner?: string };
   odds: Odds;
 };
 // decimal prices from the feed (frozen at the start)
 export type Odds = { provider?: string | null; home?: number; away?: number; draw?: number;
   spread?: { home_line: number; home: number; away: number }; total?: { line: number; over: number; under: number } };
-export type Prop = { player_id: number; stat: string; line: number };
 export type Card = { id: string; match_id: number; mode: "simple" | "complex"; crew_id: string | null; created_by: string | null; status: "open" | "locked" | "live" | "settled" | "disputed"; crews?: { name: string } | null };
 export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; price?: number | null; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
 export type Entry = { id: string; card_id: string; user_id: string; boost_call_type: CallType | null; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null } };
@@ -29,44 +28,26 @@ export type MatchEvent = { id: number; type: "goal" | "yellow" | "red" | "yellow
 
 const fail = (e: any) => { throw new Error(e?.message ?? String(e)); };
 
-// markets for one sport (a card's), or every sport's when omitted
-export async function getMarkets(sport?: string): Promise<Market[]> {
-  let q = supabase.from("markets").select("*").eq("enabled", true);
-  if (sport) q = q.eq("sport", sport);
-  const { data, error } = await q.order("sort_order");
+// every market on the card
+export async function getMarkets(): Promise<Market[]> {
+  const { data, error } = await supabase.from("markets").select("*").eq("enabled", true).order("sort_order");
   if (error) fail(error);
   return data as Market[];
 }
 
-export async function getSports(): Promise<Sport[]> {
-  const { data, error } = await supabase.from("sports").select("*").order("sort_order");
-  if (error) fail(error);
-  return data as Sport[];
-}
-
-// The board: two days back to a week out, optionally one sport. Paged past the API's 1000-row cap.
-export async function getBoard(sport?: string): Promise<BoardRow[]> {
+// The board: two days back to a week out. Paged past the API's 1000-row cap.
+export async function getBoard(): Promise<BoardRow[]> {
   const from = new Date(Date.now() - 2 * 86400000).toISOString();
   const to = new Date(Date.now() + 8 * 86400000).toISOString();
   const rows: BoardRow[] = [];
   for (let page = 0; page < 10; page++) {
-    let q = supabase.from("v_board").select("*").gte("utc_date", from).lte("utc_date", to);
-    if (sport) q = q.eq("sport", sport);
-    const { data, error } = await q.order("utc_date").order("match_id").range(page * 1000, page * 1000 + 999);
+    const { data, error } = await supabase.from("v_board").select("*").gte("utc_date", from).lte("utc_date", to)
+      .order("utc_date").order("match_id").range(page * 1000, page * 1000 + 999);
     if (error) fail(error);
     rows.push(...(data as BoardRow[]));
     if ((data ?? []).length < 1000) break;
   }
   return rows;
-}
-
-// live games per sport, for the counts on the sport filter
-export async function getLiveCounts(): Promise<Record<string, number>> {
-  const { data, error } = await supabase.from("v_board").select("sport").eq("phase", "live");
-  if (error) fail(error);
-  const out: Record<string, number> = {};
-  for (const r of (data ?? []) as Array<{ sport: string }>) out[r.sport] = (out[r.sport] ?? 0) + 1;
-  return out;
 }
 
 export async function getMatches(ids: number[]): Promise<BoardRow[]> {
@@ -110,12 +91,6 @@ export async function getSquads(homeId: number, awayId: number): Promise<Player[
   const { data, error } = await supabase.from("players").select("id, team_id, name, position").in("team_id", [homeId, awayId]).order("name");
   if (error) fail(error);
   return data as Player[];
-}
-
-export async function getProps(matchId: number): Promise<Prop[]> {
-  const { data, error } = await supabase.from("match_props").select("player_id, stat, line").eq("match_id", matchId);
-  if (error) fail(error);
-  return (data ?? []) as Prop[];
 }
 
 export async function getEvents(matchId: number): Promise<MatchEvent[]> {
@@ -172,7 +147,7 @@ export async function getCardPlayers(cardId: string): Promise<CardPlayer[]> {
 export async function getCrewMembers(id: string) {
   const { data, error } = await supabase.from("crew_members").select("user_id, role, joined_at, profiles:user_id(display_name)").eq("crew_id", id);
   if (error) fail(error);
-  return (data ?? []) as Array<{ user_id: string; role: string; joined_at: string; profiles: { display_name: string | null } }>;
+  return (data ?? []) as unknown as Array<{ user_id: string; role: string; joined_at: string; profiles: { display_name: string | null } }>;
 }
 export async function getCrewCards(crewId: string): Promise<Array<Card & { players: CardPlayer[] }>> {
   const { data, error } = await supabase.from("cards").select("*").eq("crew_id", crewId).in("status", ["open", "locked", "live"]);
@@ -184,7 +159,7 @@ export async function getCrewCards(crewId: string): Promise<Array<Card & { playe
 export async function getCrewPosts(crewId: string) {
   const { data, error } = await supabase.from("crew_posts").select("id, body, created_at, user_id, profiles:user_id(display_name), calls(call_type, points_awarded)").eq("crew_id", crewId).order("created_at", { ascending: false }).limit(40);
   if (error) fail(error);
-  return (data ?? []) as Array<{ id: string; body: string | null; created_at: string; user_id: string; profiles: { display_name: string | null }; calls: { call_type: CallType; points_awarded: number } | null }>;
+  return (data ?? []) as unknown as Array<{ id: string; body: string | null; created_at: string; user_id: string; profiles: { display_name: string | null }; calls: { call_type: CallType; points_awarded: number } | null }>;
 }
 export async function crewScore(crewId: string): Promise<number> {
   const { data, error } = await supabase.rpc("crew_score", { p_crew: crewId });
@@ -212,7 +187,7 @@ export async function challengeCrew(crewId: string, code: string) {
 
 // standings
 export type LbRow = { user_id: string; display_name: string | null; points: number; points_prev: number; cards: number; hits: number; calls: number; hit_rate: number; best_call: CallType | null; best_points: number | null };
-export async function leaderboard(scope: "overall" | "competition" | "crew" | "week" | "sport", key?: string): Promise<LbRow[]> {
+export async function leaderboard(scope: "overall" | "competition" | "crew" | "week", key?: string): Promise<LbRow[]> {
   const { data, error } = await supabase.rpc("leaderboard", { p_scope: scope, p_key: key ?? null });
   if (error) fail(error);
   return (data ?? []) as LbRow[];
@@ -228,9 +203,9 @@ export async function getStickers() {
   return (data ?? []) as Array<{ competition_code: string; season: string; call_type: CallType; earned_at: string }>;
 }
 export async function getCompetitions() {
-  const { data, error } = await supabase.from("competitions").select("code, name, season, sort_order, sport").eq("active", true).order("sort_order");
+  const { data, error } = await supabase.from("competitions").select("code, name, season, sort_order").eq("active", true).order("sort_order");
   if (error) fail(error);
-  return (data ?? []) as Array<{ code: string; name: string; season: string | null; sort_order: number; sport: string }>;
+  return (data ?? []) as Array<{ code: string; name: string; season: string | null; sort_order: number }>;
 }
 
 // profile & settings

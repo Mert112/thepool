@@ -1,10 +1,10 @@
 // §5.4 Filling the card: all markets on one screen, a running slip, one boost.
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getCard, getCrowd, getMarkets, getMatch, getMyEntry, getProps, getSquads, saveCalls, setBoost, type Call, type CallType, type Market } from "../lib/api";
+import { getCard, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, saveCalls, setBoost, type Call, type CallType, type Market } from "../lib/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { countdown, fmtWhen, soon } from "../lib/format";
-import { STAT_LABEL, clashes, pointsRange, isPlayerMarket, lineOf, offered, pickText as describe, pointsFor, priceOf, priceOfCall, setScores, signed, spreadFor, teamName as nameOf } from "../lib/calls";
+import { clashes, pointsRange, isPlayerMarket, lineOf, offered, pickText as describe, pointsFor, priceOf, priceOfCall, signed, spreadFor, teamName as nameOf } from "../lib/calls";
 import { Bar, Empty, ErrorBox, Pips, Spinner } from "../components/ui";
 
 type Picks = Partial<Record<CallType, Call>>;
@@ -22,15 +22,14 @@ export default function FillCard() {
   const [saved, setSaved] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [propSel, setPropSel] = useState("");   // the player line being looked at, before over/under is picked
 
   const { data, error, loading, reload } = useLoad(async () => {
     const card = await getCard(id!);
     if (!card) throw new Error("This card does not exist or is not yours to see.");
     const match = await getMatch(card.match_id);
     if (!match) throw new Error("Fixture missing.");
-    const [markets, entry, crowd, squads, props] = await Promise.all([getMarkets(match.sport), getMyEntry(card.id, uid), getCrowd(card.id), getSquads(match.home_team_id, match.away_team_id), getProps(match.match_id)]);
-    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match, props)), entry, crowd, squads, props };
+    const [markets, entry, crowd, squads] = await Promise.all([getMarkets(), getMyEntry(card.id, uid), getCrowd(card.id), getSquads(match.home_team_id, match.away_team_id)]);
+    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entry, crowd, squads };
   }, [id]);
 
   // hydrate from the saved entry
@@ -89,7 +88,6 @@ export default function FillCard() {
   const crowdFor = (ct: CallType) => crowd.filter((c) => c.call_type === ct).sort((a, b) => b.n - a.n);
   const pickText = (c: Call) => describe(c, match, playerName);
   const sides = [match.home_team_id, match.away_team_id];
-  const distanceLabels = match.sport === "tennis" ? ["Yes — a deciding set", "No — it ends early"] : ["Yes — to the judges", "No — someone finishes it"];
   // an option shows what it pays: its own price when it is your saved pick, today's otherwise
   const pays = (k: Market, v: Call) => { const c = picks[k.call_type]; const same = c && JSON.stringify({ ...c, id: 0, price: 0, result: 0, points_awarded: 0 }) === JSON.stringify({ ...c, ...v, id: 0, price: 0, result: 0, points_awarded: 0 }); return pointsFor(same && c ? priceOfCall(k, c, match) : priceOf(k, v, match)); };
   const opt = (k: Market, on: boolean, label: string, v: Call) => (
@@ -100,7 +98,6 @@ export default function FillCard() {
   // the header: what your pick pays, or the range on offer
   const range = (k: Market) => pointsRange(k, match);
   const priced = !!match.odds?.provider;
-  const propsBy = new Map(data!.props.map((p) => [`${p.player_id}:${p.stat}`, p]));
 
   return (
     <div>
@@ -135,7 +132,7 @@ export default function FillCard() {
                 {k.call_type === "winner" && (
                   <div className="opts">
                     {opt(k, !!cur && cur.pick !== "draw" && cur.team_id === match.home_team_id, teamName(match.home_team_id), { call_type: "winner", team_id: match.home_team_id })}
-                    {match.sport === "soccer" && opt(k, cur?.pick === "draw", "Draw", { call_type: "winner", pick: "draw" })}
+                        {opt(k, cur?.pick === "draw", "Draw", { call_type: "winner", pick: "draw" })}
                     {opt(k, !!cur && cur.pick !== "draw" && cur.team_id === match.away_team_id, teamName(match.away_team_id), { call_type: "winner", team_id: match.away_team_id })}
                   </div>
                 )}
@@ -148,62 +145,6 @@ export default function FillCard() {
                 {k.call_type === "spread" && (
                   <div className="opts">
                     {sides.map((t) => opt(k, cur?.team_id === t, `${teamName(t)} ${signed(spreadFor(match, t)!)}`, { call_type: "spread", team_id: t }))}
-                  </div>
-                )}
-                {k.call_type === "player_line" && (() => {
-                  const key = cur ? `${cur.player_id}:${cur.pick}` : propSel;
-                  const prop = propsBy.get(key);
-                  return (
-                    <div style={{ marginTop: 14 }}>
-                      <select className="select" style={{ maxWidth: 420 }} disabled={!editable} value={key} onChange={(e) => { setPropSel(e.target.value); if (cur) set("player_line", null); }}>
-                        <option value="">— pick a player line —</option>
-                        {[...data!.props].sort((a, b) => playerName(a.player_id).localeCompare(playerName(b.player_id)) || a.stat.localeCompare(b.stat)).map((p) => (
-                          <option key={`${p.player_id}:${p.stat}`} value={`${p.player_id}:${p.stat}`}>{playerName(p.player_id)} · {p.line} {STAT_LABEL[p.stat] ?? p.stat}</option>
-                        ))}
-                      </select>
-                      {prop && (
-                        <div className="opts">
-                          {opt(k, cur?.yes === true, `Over ${prop.line}`, { call_type: "player_line", player_id: prop.player_id, pick: prop.stat, yes: true })}
-                          {opt(k, cur?.yes === false, `Under ${prop.line}`, { call_type: "player_line", player_id: prop.player_id, pick: prop.stat, yes: false })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-                {k.call_type === "distance" && (
-                  <div className="opts">
-                    {opt(k, cur?.yes === true, distanceLabels[0], { call_type: "distance", yes: true })}
-                    {opt(k, cur?.yes === false, distanceLabels[1], { call_type: "distance", yes: false })}
-                  </div>
-                )}
-                {k.call_type === "margin" && (
-                  <div className="stack" style={{ marginTop: 14, gap: 8 }}>
-                    {sides.map((t) => (
-                      <div key={t} className="row-of">
-                        <span className="small" style={{ fontWeight: 700, minWidth: 140 }}>{teamName(t)} by</span>
-                        {(k.options ?? []).map((b) => { const on = cur?.team_id === t && cur?.pick === b; return <button key={b} disabled={!editable} className={"opt" + (on ? " on" : "")} style={{ flex: "none", minWidth: 64 }} onClick={() => set("margin", on ? null : { call_type: "margin", team_id: t, pick: b })}>{b}</button>; })}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {k.call_type === "sets" && (
-                  <div className="opts">
-                    {setScores(match.best_of).map(([h, a]) => opt(k, cur?.home_goals === h && cur?.away_goals === a, `${teamName(h > a ? match.home_team_id : match.away_team_id)} ${Math.max(h, a)}–${Math.min(h, a)}`, { call_type: "sets", home_goals: h, away_goals: a }))}
-                  </div>
-                )}
-                {k.call_type === "method" && (
-                  <div className="stack" style={{ marginTop: 14, gap: 8 }}>
-                    {sides.map((t) => (
-                      <div key={t} className="row-of">
-                        <span className="small" style={{ fontWeight: 700, minWidth: 140 }}>{teamName(t)} by</span>
-                        {(k.options ?? []).map((m) => opt(k, cur?.team_id === t && cur?.pick === m, m, { call_type: "method", team_id: t, pick: m }))}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {k.call_type === "round" && (
-                  <div className="opts">
-                    {Array.from({ length: match.best_of ?? 3 }, (_, i) => String(i + 1)).map((r) => opt(k, cur?.pick === r, `Round ${r}`, { call_type: "round", pick: r }))}
                   </div>
                 )}
                 {k.call_type === "draw" && (

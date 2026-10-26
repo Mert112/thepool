@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// The Pool — ESPN sync. systemd runs it every minute (deploy/thepool-sync.timer):
+// The Pool — ESPN sync, football only (0017). systemd runs it every minute (deploy/thepool-sync.timer):
 //   · every 30 minutes: fixtures for yesterday → a week out, every competition
-//   · every minute: scoreboards for competitions with a game in play or about to start
-//   · games someone is playing: box scores / goals and cards, written before the game goes final
-//   · squads for the next 36 hours of team-sport fixtures
+//   · every minute: scoreboards for competitions with a match in play or about to start
+//   · matches someone is playing: goals and cards, written before the match goes final
+//   · squads for the fixtures on the board
 //   · then settlement (pool.process_match_updates)
 // `node espn-sync.mjs --dry` fetches and parses without writing anything.
 import { PostgrestClient } from "@supabase/postgrest-js";
@@ -25,7 +25,6 @@ const STATE_FILE = env.STATE_FILE || "/var/lib/thepool-sync/state.json";
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports";
 const FULL_EVERY_MS = 30 * 60e3;
 const LIVE = new Set(["IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT"]);
-const TEAM_SPORTS = new Set(["soccer", "basketball", "american_football", "baseball", "hockey"]);
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,15 +66,15 @@ async function mapLimit(items, n, fn) {
 // ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
-function statusOf(st, sport) {
+function statusOf(st) {
   const t = st?.type ?? {}, name = t.name ?? "";
   if (/CANCEL/.test(name)) return "CANCELLED";
   if (/POSTPONED/.test(name)) return "POSTPONED";
   if (t.state === "pre") return "TIMED";
   if (t.state === "in") {
     if (/HALFTIME/.test(name)) return "PAUSED";
-    if (sport === "soccer" && (st.period ?? 0) >= 5) return "PENALTY_SHOOTOUT";
-    if (sport === "soccer" && (st.period ?? 0) >= 3) return "EXTRA_TIME";
+    if ((st.period ?? 0) >= 5) return "PENALTY_SHOOTOUT";
+    if ((st.period ?? 0) >= 3) return "EXTRA_TIME";
     return /DELAY|SUSPEND/.test(name) ? "SUSPENDED" : "IN_PLAY";
   }
   if (t.completed || /FINAL|RETIRED|WALKOVER/.test(name)) return "FINISHED";
@@ -107,168 +106,61 @@ function minuteOf(display) {
 }
 
 // ---------------------------------------------------------------------------
-// Scoreboard → { teams, match } per game, tennis match or fight
+// Scoreboard → { teams, match } per fixture
 // ---------------------------------------------------------------------------
-function teamRow(ns, sport, t) {
-  return { espn_key: `${ns}:${t.id}`, name: t.displayName ?? t.name, short_name: t.shortDisplayName ?? t.shortName ?? null, tla: t.abbreviation ?? null, crest_url: t.logo ?? t.flag?.href ?? null, sport };
+function teamRow(ns, t) {
+  return { espn_key: `${ns}:${t.id}`, name: t.displayName ?? t.name, short_name: t.shortDisplayName ?? t.shortName ?? null, tla: t.abbreviation ?? null, crest_url: t.logo ?? t.flag?.href ?? null, sport: "soccer" };
 }
 
 function base(comp, c, ev, st) {
   return {
-    espn_key: `${comp.espn_path}:${c.id}`, competition_code: comp.code, sport: comp.sport,
+    espn_key: `${comp.espn_path}:${c.id}`, competition_code: comp.code, sport: "soccer",
     season: String(ev.season?.year ?? new Date(c.date ?? ev.date).getUTCFullYear()),
     utc_date: new Date(c.date ?? c.startDate ?? ev.date).toISOString(),
-    status: statusOf(st, comp.sport), minute: null, clock: null,
+    status: statusOf(st), minute: null, clock: null,
     home_score: null, away_score: null, ft_home: null, ft_away: null, duration: null,
-    home_periods: null, away_periods: null, line: null, best_of: null, event_name: null, result_detail: {}, prices: {},
+    line: null, event_name: null, result_detail: {}, prices: {},
   };
 }
 
-function parseTeamGame(comp, ev, c) {
+function parseMatch(comp, ev, c) {
   const st = c.status ?? ev.status;
   const cs = c.competitors ?? [];
   const h = cs.find((x) => x.homeAway === "home") ?? cs[0], a = cs.find((x) => x.homeAway === "away") ?? cs[1];
   if (!h?.team?.id || !a?.team?.id) return null;
   const m = base(comp, c, ev, st);
   const started = st?.type?.state !== "pre";
-  const periods = (x) => (x.linescores?.length ? x.linescores.map((l) => num(l.value) ?? 0) : null);
-  m.home_periods = periods(h); m.away_periods = periods(a);
   m.line = num(c.odds?.[0]?.overUnder);
   m.prices = oddsOf(c);
   m.event_name = c.notes?.[0]?.headline ?? null;
   if (started) { m.home_score = num(h.score); m.away_score = num(a.score); }
-  if (st?.type?.state === "in") m.clock = st.type.shortDetail ?? st.displayClock ?? null;
 
-  if (comp.sport === "soccer") {
-    const period = st?.period ?? 0;
-    if (st?.type?.state === "in") { m.minute = minuteOf(st.displayClock)?.minute ?? null; m.clock = /HALFTIME/.test(st.type.name) ? "HT" : st.displayClock ?? m.clock; }
-    // §2.1 football settles on the 90-minute state: after extra time, count only goals up to 90+stoppage
-    if (started) {
-      m.ft_home = m.home_score; m.ft_away = m.away_score;
-      m.duration = period >= 5 || /PEN/.test(st.type.name) ? "PENALTY_SHOOTOUT" : period >= 3 || /AET/.test(st.type.name) ? "EXTRA_TIME" : "REGULAR";
-      if (m.duration !== "REGULAR") {
-        const goals = (c.details ?? []).filter((d) => d.scoringPlay && !/shootout/i.test(d.type?.text ?? "") && (minuteOf(d.clock?.displayValue)?.minute ?? 999) <= 90);
-        m.home_score = goals.filter((g) => String(g.team?.id) === String(h.team.id)).length;
-        m.away_score = goals.filter((g) => String(g.team?.id) === String(a.team.id)).length;
-      }
+  const period = st?.period ?? 0;
+  if (st?.type?.state === "in") { m.minute = minuteOf(st.displayClock)?.minute ?? null; m.clock = /HALFTIME/.test(st.type.name) ? "HT" : st.displayClock ?? st.type.shortDetail ?? null; }
+  // §2.1 football settles on the 90-minute state: after extra time, count only goals up to 90+stoppage
+  if (started) {
+    m.ft_home = m.home_score; m.ft_away = m.away_score;
+    m.duration = period >= 5 || /PEN/.test(st.type.name) ? "PENALTY_SHOOTOUT" : period >= 3 || /AET/.test(st.type.name) ? "EXTRA_TIME" : "REGULAR";
+    if (m.duration !== "REGULAR") {
+      const goals = (c.details ?? []).filter((d) => d.scoringPlay && !/shootout/i.test(d.type?.text ?? "") && (minuteOf(d.clock?.displayValue)?.minute ?? 999) <= 90);
+      m.home_score = goals.filter((g) => String(g.team?.id) === String(h.team.id)).length;
+      m.away_score = goals.filter((g) => String(g.team?.id) === String(a.team.id)).length;
     }
   }
-  return { teams: [teamRow(comp.team_ns, comp.sport, h.team), teamRow(comp.team_ns, comp.sport, a.team)], home: `${comp.team_ns}:${h.team.id}`, away: `${comp.team_ns}:${a.team.id}`, espnTeam: { [h.team.id]: `${comp.team_ns}:${h.team.id}`, [a.team.id]: `${comp.team_ns}:${a.team.id}` }, match: m };
-}
-
-// tennis players and fighters are one-person sides; ESPN's athlete id is the identity
-function personSides(c) {
-  const cs = [...(c.competitors ?? [])].sort((x, y) => (x.homeAway === "home" ? 0 : x.homeAway === "away" ? 1 : 2) - (y.homeAway === "home" ? 0 : y.homeAway === "away" ? 1 : 2) || (x.order ?? 0) - (y.order ?? 0));
-  if (cs.length !== 2) return null;
-  const side = (x) => { const p = x.athlete ?? {}; const id = p.id ?? x.id; const name = p.displayName ?? p.fullName; return id && name && !/^TBD$/i.test(name) ? { id, displayName: name, shortName: p.shortName, flag: p.flag } : null; };
-  const h = side(cs[0]), a = side(cs[1]);
-  return h && a ? { h, a, hc: cs[0], ac: cs[1] } : null;
-}
-
-function parseTennis(comp, ev, c, grouping) {
-  const s = personSides(c); if (!s) return null;
-  const st = c.status, m = base(comp, c, ev, st), name = st?.type?.name ?? "";
-  // ESPN's format field says 5 for every ATP event; only men's Grand Slam main draws are best of five
-  const slam = /australian open|roland garros|french open|wimbledon|us open/i.test(ev.name ?? "");
-  m.best_of = comp.code === "ATP" && slam && !/qualif/i.test(c.round?.displayName ?? "") ? 5 : 3;
-  m.event_name = [ev.name, c.round?.displayName].filter(Boolean).join(" · ");
-  const games = (x) => (x.linescores ?? []).map((l) => num(l.value) ?? 0);
-  m.home_periods = games(s.hc); m.away_periods = games(s.ac);
-  const finished = m.status === "FINISHED";
-  // sets won: every set once it is over; during play the last set is still going
-  const n = Math.max(m.home_periods.length, m.away_periods.length) - (finished ? 0 : 1);
-  let hs = 0, as = 0;
-  for (let i = 0; i < n; i++) { const x = m.home_periods[i] ?? 0, y = m.away_periods[i] ?? 0; if (x > y) hs++; else if (y > x) as++; }
-  if (st?.type?.state !== "pre") { m.home_score = hs; m.away_score = as; }
-  if (st?.type?.state === "in") m.clock = `Set ${Math.max(m.home_periods.length, m.away_periods.length, 1)}`;   // ESPN says just "2nd"
-  if (finished) {
-    const winner = s.hc.winner ? "home" : s.ac.winner ? "away" : "none";
-    const retired = /RETIRED|WALKOVER|ABANDON|DEFAULT/.test(name) || /\bret\.|retired|walkover|w\/o/i.test(c.notes?.map((x) => x.text).join(" ") ?? "");
-    m.result_detail = { winner, ...(retired ? { retired: true } : {}) };
-  }
-  return { teams: [personRow(comp, s.h), personRow(comp, s.a)], home: `${comp.team_ns}:${s.h.id}`, away: `${comp.team_ns}:${s.a.id}`, espnTeam: {}, match: m };
-}
-
-function parseFight(comp, ev, c) {
-  const s = personSides(c); if (!s) return null;
-  const st = c.status, m = base(comp, c, ev, st);
-  m.best_of = num(c.format?.regulation?.periods) ?? 3;
-  m.event_name = [ev.name, c.type?.abbreviation].filter(Boolean).join(" · ");
-  if (st?.type?.state === "in") m.clock = `R${st.period ?? 1} ${st.displayClock ?? ""}`.trim();
-  if (m.status === "FINISHED") {
-    const winner = s.hc.winner ? "home" : s.ac.winner ? "away" : "none";
-    const how = (c.details ?? []).map((d) => d.type?.text ?? "").find((t) => /winner/i.test(t)) ?? "";
-    const method = winner === "none" ? null : /decision/i.test(how) ? "Decision" : /sub/i.test(how) ? "Submission" : /ko|knock/i.test(how) ? "KO/TKO" : null;
-    m.result_detail = { winner, ...(method ? { method, round: String(st.period ?? "") } : {}) };
-    m.home_score = winner === "home" ? 1 : 0; m.away_score = winner === "away" ? 1 : 0;
-  }
-  return { teams: [personRow(comp, s.h), personRow(comp, s.a)], home: `${comp.team_ns}:${s.h.id}`, away: `${comp.team_ns}:${s.a.id}`, espnTeam: {}, match: m };
-}
-
-function personRow(comp, p) {
-  return { espn_key: `${comp.team_ns}:${p.id}`, name: p.displayName, short_name: p.shortName ?? null, tla: null, crest_url: p.flag?.href ?? null, sport: comp.sport };
+  return { teams: [teamRow(comp.team_ns, h.team), teamRow(comp.team_ns, a.team)], home: `${comp.team_ns}:${h.team.id}`, away: `${comp.team_ns}:${a.team.id}`, espnTeam: { [h.team.id]: `${comp.team_ns}:${h.team.id}`, [a.team.id]: `${comp.team_ns}:${a.team.id}` }, match: m };
 }
 
 function parseScoreboard(comp, sb) {
   const out = [];
   for (const ev of sb?.events ?? []) {
-    if (comp.sport === "tennis") {
-      for (const g of ev.groupings ?? []) {
-        if (!/singles/i.test(`${g.grouping?.slug ?? ""} ${g.grouping?.displayName ?? ""}`)) continue;
-        for (const c of g.competitions ?? []) { const r = parseTennis(comp, ev, c, g); if (r) out.push(r); }
-      }
-    } else if (comp.sport === "mma") {
-      for (const c of ev.competitions ?? []) { const r = parseFight(comp, ev, c); if (r) out.push(r); }
-    } else {
-      for (const c of ev.competitions ?? []) { const r = parseTeamGame(comp, ev, c); if (r) out.push(r); }
-    }
+    for (const c of ev.competitions ?? []) { const r = parseMatch(comp, ev, c); if (r) out.push(r); }
   }
   return out;
 }
 
 // ---------------------------------------------------------------------------
-// Summary → player stats (US sports) or goals/cards (football)
+// Summary → goals and cards, and who took part
 // ---------------------------------------------------------------------------
-// [stat, column, which tables count] per sport; the first settles the sport's scorer / top-scorer call and is
-// written as 0 for everyone who played. Baseball's tables are unnamed: batting is the one with at-bats
-// (pitching also has an HR column — home runs allowed — which must not count).
-const any = () => true, table = (re) => (g) => re.test(g.name ?? "");
-const STATS = {
-  basketball: [["pts", "PTS", any], ["reb", "REB", any], ["ast", "AST", any]],
-  american_football: [["td", "TD", table(/^(rushing|receiving)$/)], ["pass_yds", "YDS", table(/^passing$/)], ["rush_yds", "YDS", table(/^rushing$/)],
-                      ["rec_yds", "YDS", table(/^receiving$/)], ["rec", "REC", table(/^receiving$/)]],
-  baseball: [["hr", "HR", (g) => (g.labels ?? g.names ?? []).includes("AB")]],
-  hockey: [["g", "G", any]],
-};
-// the feed's player over/under types → our stats
-const PROP_STAT = {
-  "Total Points": "pts", "Total Rebounds": "reb", "Total Assists": "ast",
-  "Total Passing Yards (incl. overtime)": "pass_yds", "Total Rushing Yards (incl. overtime)": "rush_yds",
-  "Total Receiving Yards (incl. overtime)": "rec_yds", "Total Receptions (incl. overtime)": "rec",
-};
-
-// every athlete with a line in any box-score table took part ('app'); the sport's stat comes from its tables
-function parseBox(sport, s, teamKey) {
-  const defs = STATS[sport], primary = defs[0][0];
-  const players = new Map(), values = new Map();   // "player:stat" → value
-  const add = (id, stat, v) => values.set(`${id}:${stat}`, (values.get(`${id}:${stat}`) ?? 0) + v);
-  for (const side of s?.boxscore?.players ?? []) {
-    const tk = teamKey(side.team?.id);
-    for (const g of side.statistics ?? []) {
-      const labels = g.labels ?? g.names ?? [];
-      const cols = defs.filter(([, , ok]) => ok(g)).map(([stat, label]) => [stat, labels.indexOf(label)]).filter(([, i]) => i >= 0);
-      for (const a of g.athletes ?? []) {
-        const id = num(a.athlete?.id); if (!id || !a.stats?.length) continue;
-        players.set(id, { id, name: a.athlete.displayName, position: a.athlete.position?.abbreviation ?? null, team_key: tk });
-        add(id, "app", 0); add(id, primary, 0);
-        for (const [stat, i] of cols) add(id, stat, num(a.stats[i]) ?? 0);
-      }
-    }
-  }
-  const stats = [...values].map(([k, value]) => { const [id, stat] = k.split(":"); return { player_id: Number(id), stat, value: stat === "app" ? 1 : value }; });
-  return { players: [...players.values()], stats, events: null };
-}
-
 function parseSoccerEvents(s, teamKey) {
   const players = new Map(), events = [];
   const person = (p, tk) => { const id = num(p?.athlete?.id); if (id && !players.has(id)) players.set(id, { id, name: p.athlete.displayName, position: null, team_key: tk }); return id; };
@@ -306,33 +198,25 @@ async function main() {
   const t0 = Date.now(), now = new Date(), state = loadState();
   const full = FULL || !state.lastFull || now - new Date(state.lastFull) > FULL_EVERY_MS;
   // --dry can read the competition list from a file (DRY_COMPS) before the migration is live
-  const comps = DRY && process.env.DRY_COMPS ? JSON.parse(readFileSync(process.env.DRY_COMPS, "utf8")) : must(await db.from("competitions").select("code, sport, espn_path, espn_params, team_ns").eq("active", true).not("espn_path", "is", null), "competitions");
+  const comps = DRY && process.env.DRY_COMPS ? JSON.parse(readFileSync(process.env.DRY_COMPS, "utf8")) : must(await db.from("competitions").select("code, espn_path, espn_params, team_ns").eq("active", true).not("espn_path", "is", null), "competitions");
   const byCode = Object.fromEntries(comps.map((c) => [c.code, c]));
 
   // 1. which scoreboards to read
   const jobs = [];
-  const range = (a, b) => `dates=${etDate(addDays(now, a))}-${etDate(addDays(now, b))}`;
   if (full) {
-    for (const c of comps) {
-      if (c.sport === "tennis" || c.sport === "mma") jobs.push({ comp: c, q: range(-1, 14) });
-      else for (let d = -1; d <= 7; d++) jobs.push({ comp: c, q: `dates=${etDate(addDays(now, d))}` });
-    }
+    for (const c of comps) for (let d = -1; d <= 7; d++) jobs.push({ comp: c, q: `dates=${etDate(addDays(now, d))}` });
   } else {
     const hot = must(await db.from("matches").select("competition_code, utc_date").not("espn_key", "is", null)
       .gte("utc_date", addDays(now, -0.5).toISOString()).lte("utc_date", new Date(now.getTime() + 20 * 60e3).toISOString())
       .in("status", ["SCHEDULED", "TIMED", "IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT", "SUSPENDED"]), "hot matches");
     const want = new Map();
     for (const m of hot) { if (!byCode[m.competition_code]) continue; if (!want.has(m.competition_code)) want.set(m.competition_code, new Set()); want.get(m.competition_code).add(etDate(new Date(m.utc_date))); }
-    for (const [code, days] of want) {
-      const c = byCode[code];
-      if (c.sport === "tennis" || c.sport === "mma") jobs.push({ comp: c, q: range(-1, 1) });
-      else for (const d of days) jobs.push({ comp: c, q: `dates=${d}` });
-    }
+    for (const [code, days] of want) for (const d of days) jobs.push({ comp: byCode[code], q: `dates=${d}` });
   }
 
   const boards = await mapLimit(jobs, 6, async (j) => ({ comp: j.comp, sb: await espn(`${j.comp.espn_path}/scoreboard`, [j.q, j.comp.espn_params, "limit=500"].filter(Boolean).join("&")) }));
   const games = new Map();
-  // tournament feeds (tennis, fight nights) carry the whole week; older results are not board material
+  // a feed can carry several days; older results are not board material
   const oldest = addDays(now, -3).toISOString();
   for (const { comp, sb } of boards) for (const g of parseScoreboard(comp, sb)) if (g.match.utc_date >= oldest) games.set(g.match.espn_key, { ...g, comp });
   const list = [...games.values()];
@@ -343,7 +227,7 @@ async function main() {
     console.log(full ? "FULL pass" : "LIVE pass", `${jobs.length} scoreboards, ${list.length} games`); console.table(bySport);
     for (const code of Object.keys(bySport)) {
       const g = list.find((x) => x.comp.code === code && x.match.status === "FINISHED") ?? list.find((x) => x.comp.code === code);
-      const m = g.match; console.log(code.padEnd(6), m.utc_date.slice(0, 16), `${g.teams[0].name} v ${g.teams[1].name}`, m.status, m.home_score ?? "-", m.away_score ?? "-", m.clock ?? "", m.line != null ? `line ${m.line}` : "", m.best_of ? `bo${m.best_of}` : "", JSON.stringify(m.result_detail), m.event_name ?? "");
+      const m = g.match; console.log(code.padEnd(6), m.utc_date.slice(0, 16), `${g.teams[0].name} v ${g.teams[1].name}`, m.status, m.home_score ?? "-", m.away_score ?? "-", m.clock ?? "", m.line != null ? `line ${m.line}` : "", m.event_name ?? "");
     }
     return;
   }
@@ -362,30 +246,27 @@ async function main() {
   }
   const tracked = new Map(must(await db.rpc("sync_tracked_matches"), "tracked").map((r) => [r.espn_key, r]));
 
-  // 4. box scores / events for played games in play or finishing, before their final status lands
+  // 4. goals, cards and line-ups for played matches in play or finishing, before their final status lands
   let summaries = 0;
-  await mapLimit(list.filter((g) => tracked.has(g.match.espn_key) && TEAM_SPORTS.has(g.comp.sport) && (LIVE.has(g.match.status) || g.match.status === "FINISHED")), 4, (g) => isolate(`box score ${g.match.espn_key}`, async () => {
-    g.hold = true;   // until this game's stats are safely written, it cannot go final
+  await mapLimit(list.filter((g) => tracked.has(g.match.espn_key) && (LIVE.has(g.match.status) || g.match.status === "FINISHED")), 4, (g) => isolate(`summary ${g.match.espn_key}`, async () => {
+    g.hold = true;   // until this match's events are safely written, it cannot go final
     const id = tracked.get(g.match.espn_key).id, espnId = g.match.espn_key.split(":").pop();
     const s = await espn(`${g.comp.espn_path}/summary`, `event=${espnId}`);
     const teamKey = (eid) => g.espnTeam[eid] ?? null;
     if (!s) return;
-    const parsed = g.comp.sport === "soccer" ? parseSoccerEvents(s, teamKey) : parseBox(g.comp.sport, s, teamKey);
-    if (g.match.status === "FINISHED" && g.comp.sport !== "soccer" && parsed.stats.length === 0) return;  // box score not up yet
-    const prow = (p) => ({ id: p.id, name: p.name, position: p.position, team_id: teamId.get(p.team_key) ?? null, sport: g.comp.sport, updated_at: now.toISOString() });
-    if (parsed.players.length) must(await db.from("players").upsert(uniq(parsed.players).map(prow), { onConflict: "id", ignoreDuplicates: g.comp.sport === "soccer" }), "players");
+    const parsed = parseSoccerEvents(s, teamKey);
+    const prow = (p) => ({ id: p.id, name: p.name, position: p.position, team_id: teamId.get(p.team_key) ?? null, sport: "soccer", updated_at: now.toISOString() });
+    if (parsed.players.length) must(await db.from("players").upsert(uniq(parsed.players).map(prow), { onConflict: "id", ignoreDuplicates: true }), "players");
     if (parsed.stats.length) must(await db.from("player_stats").upsert(uniq(parsed.stats.map((x) => ({ match_id: id, ...x })), (x) => `${x.player_id}:${x.stat}`), { onConflict: "match_id,player_id,stat" }), "player_stats");
     g.digest = parsed.stats.map((x) => `${x.player_id}:${x.stat}:${x.value}`).sort();
-    if (parsed.events) {
-      const rows = parsed.events.map(({ team_key, ...e }) => ({ match_id: id, ...e, team_id: teamId.get(team_key) ?? null }));
-      if (rows.length) must(await db.from("match_events").upsert(uniq(rows, (r) => r.provider_key), { onConflict: "match_id,provider_key" }), "match_events");
-      // a goal the provider withdrew (VAR) disappears from the feed: drop it here too
-      const keep = rows.map((r) => r.provider_key);
-      let del = db.from("match_events").delete().eq("match_id", id);
-      if (keep.length) del = del.not("provider_key", "in", `(${keep.map((k) => `"${k}"`).join(",")})`);
-      must(await del, "match_events cleanup");
-      g.digest.push(...rows.map((r) => `${r.provider_key}:${r.type}:${r.minute}:${r.player_id}:${r.assist_player_id}`).sort());
-    }
+    const rows = parsed.events.map(({ team_key, ...e }) => ({ match_id: id, ...e, team_id: teamId.get(team_key) ?? null }));
+    if (rows.length) must(await db.from("match_events").upsert(uniq(rows, (r) => r.provider_key), { onConflict: "match_id,provider_key" }), "match_events");
+    // a goal the provider withdrew (VAR) disappears from the feed: drop it here too
+    const keep = rows.map((r) => r.provider_key);
+    let del = db.from("match_events").delete().eq("match_id", id);
+    if (keep.length) del = del.not("provider_key", "in", `(${keep.map((k) => `"${k}"`).join(",")})`);
+    must(await del, "match_events cleanup");
+    g.digest.push(...rows.map((r) => `${r.provider_key}:${r.type}:${r.minute}:${r.player_id}:${r.assist_player_id}`).sort());
     g.hold = false;
     summaries++;
   }));
@@ -406,55 +287,29 @@ async function main() {
   }
   for (const part of chunks(rows, 200)) must(await db.from("matches").upsert(part, { onConflict: "espn_key" }), "matches");
 
-  // 6. squads for upcoming team-sport fixtures
+  // 6. squads for the fixtures on the board
   let squads = 0;
   const needs = must(await db.rpc("sync_roster_needs", { p_limit: full ? 40 : 12 }), "roster needs");
   await mapLimit(needs, 4, (n) => isolate(`squad ${n.espn_key}`, async () => {
     const r = await espn(`${n.espn_path}/teams/${n.espn_key.split(":").pop()}/roster`);
     const flat = Array.isArray(r?.athletes?.[0]?.items) ? r.athletes.flatMap((g) => g.items ?? []) : r?.athletes ?? [];
     const players = flat.filter((a) => num(a.id)).map((a) => ({ id: num(a.id), team_id: n.team_id, name: a.displayName ?? a.fullName, position: a.position?.abbreviation ?? null,
-      shirt: num(a.jersey), sport: byCode[Object.keys(byCode).find((k) => byCode[k].espn_path === n.espn_path)]?.sport ?? null, updated_at: now.toISOString() }));
+      shirt: num(a.jersey), sport: "soccer", updated_at: now.toISOString() }));
     for (const part of chunks(uniq(players), 300)) must(await db.from("players").upsert(part, { onConflict: "id" }), "roster");
     must(await db.from("teams").update({ roster_checked_at: now.toISOString() }).eq("id", n.team_id), "roster checked");
     squads += players.length ? 1 : 0;
   }));
 
-  // 7. player over/under lines for basketball and American football games in the next 36 hours
-  let props = 0;
-  if (full) {
-    const soon = rows.filter((r) => (r.sport === "basketball" || r.sport === "american_football") && r.status === "TIMED"
-      && new Date(r.utc_date) - now < 36 * 3600e3 && new Date(r.utc_date) > now).slice(0, 30);
-    const ids = new Map();
-    for (const part of chunks(soon.map((r) => r.espn_key), 150)) for (const r of must(await db.from("matches").select("id, espn_key").in("espn_key", part), "prop matches")) ids.set(r.espn_key, r.id);
-    await mapLimit(soon, 4, (r) => isolate(`props ${r.espn_key}`, async () => {
-      const [sport, league] = byCode[r.competition_code].espn_path.split("/"), cid = r.espn_key.split(":").pop();
-      const res = await fetch(`https://sports.core.api.espn.com/v2/sports/${sport}/leagues/${league}/events/${cid}/competitions/${cid}/odds/100/propBets?limit=1000`, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) return;
-      const lines = [];
-      for (const it of (await res.json()).items ?? []) {
-        const stat = PROP_STAT[it.type?.name]; const line = num(it.current?.target?.value); const pid = num(/athletes\/(\d+)/.exec(it.athlete?.$ref ?? "")?.[1]);
-        if (stat && line !== null && pid) lines.push({ match_id: ids.get(r.espn_key), player_id: pid, stat, line, updated_at: now.toISOString() });
-      }
-      if (!lines.length || !ids.get(r.espn_key)) return;
-      // only players we know (squads load ahead of the game); a line for anyone else is skipped
-      const known = new Set(must(await db.from("players").select("id").in("id", [...new Set(lines.map((l) => l.player_id))]), "prop players").map((p) => p.id));
-      const keep = uniq(lines.filter((l) => known.has(l.player_id)), (l) => `${l.player_id}:${l.stat}`);
-      must(await db.from("match_props").delete().eq("match_id", ids.get(r.espn_key)), "props reset");
-      if (keep.length) must(await db.from("match_props").insert(keep), "props");
-      props += keep.length;
-    }));
-  }
-
-  // 8. lock, go live, settle
+  // 7. lock, go live, settle
   must(await db.rpc("process_match_updates"), "settlement");
 
   if (full) state.lastFull = now.toISOString();
   state.lastRun = now.toISOString();
   saveState(state);
   for (const p of problems) log("skipped", p);
-  log(`${full ? "full" : "live"} · ${jobs.length} scoreboards · ${rows.length} games · ${list.filter((g) => LIVE.has(g.match.status)).length} live · ${summaries} box scores · ${squads} squads · ${props} player lines · ${Date.now() - t0}ms`);
+  log(`${full ? "full" : "live"} · ${jobs.length} scoreboards · ${rows.length} matches · ${list.filter((g) => LIVE.has(g.match.status)).length} live · ${summaries} summaries · ${squads} squads · ${Date.now() - t0}ms`);
 }
 
-export { parseBox, parseSoccerEvents, parseScoreboard, oddsOf };
+export { parseSoccerEvents, parseScoreboard, oddsOf };
 // importing for a parser check (THEPOOL_NO_MAIN=1) must not run a sync
 if (!process.env.THEPOOL_NO_MAIN) main().catch((e) => { log("sync failed:", e.message); process.exit(1); });
