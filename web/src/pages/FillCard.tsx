@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getCard, getCrowd, getMarkets, getMyEntry, getSquads, saveCalls, type Call, type CallType, type Market, type Player } from "../features/card/api";
-import { getCardPots, myCommittedStake, STAKES, type PotRow } from "../features/economy/api";
+import { getCardPots, getJackpots, myCommittedStake, STAKES } from "../features/economy/api";
 import { getMatch } from "../features/board/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { soon } from "../lib/format";
@@ -51,9 +51,10 @@ export default function FillCard() {
       getMarkets(), getMyEntry(card.id, uid), getCrowd(card.id), getSquads(match.home_team_id, match.away_team_id),
       myCommittedStake(), getCardPots(card.id),
     ]);
+    const jackpots = await getJackpots(match.competition_code);
     // committed counts this card too; the page works out what is left after this card's own stakes
     const mine = (entry?.calls ?? []).reduce((s, c) => s + (c.stake ?? 0), 0);
-    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entry, crowd, squads, pots, elsewhere: committed - mine };
+    return { card, match, markets: markets.filter((k) => (card.mode === "complex" || k.simple) && offered(k, match)), entry, crowd, squads, pots, jackpots, elsewhere: committed - mine };
   }, [id]);
 
   // hydrate from the saved entry
@@ -91,11 +92,22 @@ export default function FillCard() {
   const setStake = (k: CallType, n: number) => { setSaved(null); setErr(null); setStakes((s) => ({ ...s, [k]: n })); };
 
   const slip = useMemo(() => (data?.markets ?? []).filter((k) => picks[k.call_type]), [data, picks]);
-  // the pot on each call, and what a point on each pick is worth at the split as it stands.
-  // Declared here, above the first caller: `payout` runs during the render that hydrates a saved
-  // entry, and a const declared further down is still in its dead zone at that point.
-  const potOf = (ct: CallType) => (data?.pots ?? []).find((p) => p.call_type === ct);
-  const pickRow = (ct: CallType, key: string): PotRow | undefined => (data?.pots ?? []).find((p) => p.call_type === ct && p.key === key);
+  // the pot on each call, and what a point on each pick is worth — live: what the others have
+  // saved, plus the pick and stake on screen now (in place of this player's saved one), plus the
+  // jackpot carried in. Declared here, above the first caller: `payout` runs during the render that
+  // hydrates a saved entry, and a const declared further down is still in its dead zone then.
+  const rowsOf = (ct: CallType) => (data?.pots ?? []).filter((p) => p.call_type === ct);
+  const savedOf = (ct: CallType) => data?.entry?.calls.find((c) => c.call_type === ct);
+  const jackpotOf = (ct: CallType) => data?.jackpots[ct] ?? rowsOf(ct)[0]?.jackpot ?? 0;
+  /** the split on `ct` if this player's call sat on `key` with the stake on screen */
+  const split = (ct: CallType, key: string) => {
+    const saved = savedOf(ct), mine = stakeOf(ct);
+    const others = (rowsOf(ct)[0]?.pot ?? 0) - (saved?.stake ?? 0);
+    const onKey = (rowsOf(ct).find((p) => p.key === key)?.pick_stake ?? 0) - (saved && keyOf(saved) === key ? saved.stake ?? 0 : 0);
+    const pot = others + mine;
+    return { pot, purse: Math.floor(pot * 0.9 * 100) / 100 + jackpotOf(ct), pickStake: onKey + mine };
+  };
+  const potNow = (ct: CallType) => { const c = picks[ct]; return c ? split(ct, keyOf(c)).pot : (rowsOf(ct)[0]?.pot ?? 0) - (savedOf(ct)?.stake ?? 0); };
   // the key card_pots() builds for a pick, so an option can look up its own price
   const keyOf = (c: Call): string =>
     c.call_type === "winner" ? (c.pick === "draw" ? "draw" : String(c.team_id))
@@ -108,9 +120,9 @@ export default function FillCard() {
   // divided by what is on it. It moves as other people play, which is the point.
   const payout = (k: Market) => {
     const c = picks[k.call_type];
-    if (!c) return null;
-    const row = pickRow(k.call_type, keyOf(c));
-    const pp = row ? perPoint(row.purse, row.pick_stake) : null;
+    if (!c || stakeOf(k.call_type) < 1) return null;
+    const { purse, pickStake } = split(k.call_type, keyOf(c));
+    const pp = perPoint(purse, pickStake);
     return pp == null ? null : Math.floor(pp * stakeOf(k.call_type) * 100) / 100;
   };
   const staked = slip.reduce((s, k) => s + stakeOf(k.call_type), 0);
@@ -173,8 +185,8 @@ export default function FillCard() {
   // every option wears its price: what one point on it returns if it comes in, at the split as it
   // stands. Nothing on it yet and the whole purse is there for whoever goes first.
   const opt = (k: Market, on: boolean, label: string, v: Call) => {
-    const row = pickRow(k.call_type, keyOf({ ...v, call_type: k.call_type }));
-    const pp = row ? perPoint(row.purse, row.pick_stake) : null;
+    const { purse, pickStake } = split(k.call_type, keyOf({ ...v, call_type: k.call_type }));
+    const pp = stakeOf(k.call_type) >= 1 ? perPoint(purse, pickStake) : null;
     return (
       <button key={label} disabled={!editable} className={"opt" + (on ? " on" : "")} onClick={() => set(k.call_type, on ? null : v)}>
         {label}<span className="odds" title={pp == null ? t.fill.perPointNobody : t.fill.perPointWhat}>{pp == null ? t.common.dash : `${fmt.pts(pp)}×`}</span>
@@ -229,14 +241,14 @@ export default function FillCard() {
                 <div className="head">
                   <div>
                     <h3 className="display" style={{ margin: 0 }}>{marketTitle(k, t)}</h3>
-                    {editable && !!potOf(k.call_type)?.jackpot && (
-                      <div className="jackpot" title={t.fill.jackpotWhy}>{t.fill.jackpot(fmt.pts(potOf(k.call_type)!.jackpot))}</div>
+                    {editable && !!jackpotOf(k.call_type) && (
+                      <div className="jackpot" title={t.fill.jackpotWhy}>{t.fill.jackpot(fmt.pts(jackpotOf(k.call_type)))}</div>
                     )}
                     <div className="small muted explainer">{marketExplainer(k, t)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div className="pts">{fmt.pts(potOf(k.call_type)?.pot ?? 0)}</div>
-                    <div className="tiny muted">{potOf(k.call_type)?.jackpot ? t.fill.inThePotPlus : t.fill.inThePot}</div>
+                    <div className="pts">{fmt.pts(potNow(k.call_type))}</div>
+                    <div className="tiny muted">{jackpotOf(k.call_type) ? t.fill.inThePotPlus : t.fill.inThePot}</div>
                     {on && editable && <button className="remove-call" onClick={() => set(k.call_type, null)}>{t.common.remove}</button>}
                   </div>
                 </div>
