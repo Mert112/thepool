@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
-import { getBoard, type BoardRow } from "../lib/api";
+import { getBoard, type BoardRow } from "../features/board/api";
 import { useLoad } from "../lib/auth";
-import { useI18n } from "../i18n";
+import { useI18n } from "../lib/i18n";
 import { ErrorBox, LangPicker } from "../components/ui";
 
 export default function Login() {

@@ -1,4 +1,5 @@
--- Rewarded ads (0025): the nonce rules. Google's rewarded slot hands the page no token of its
+-- Rewarded ads (0025, 0026): the nonce rules, the daily cap, and the fraud score that replaced
+-- the minute between ads. Google's rewarded slot hands the page no token of its
 -- own, so the nonce is ours — issued before the ad loads, spent when it is granted, never twice.
 -- Run on a fresh local db:  psql pool -f tests/ads_test.sql
 -- Every check raises on failure; a clean run prints "ADS TESTS PASSED".
@@ -37,7 +38,8 @@ $$;
 do $$ begin
   assert ad_reward() = 0.2, format('an ad is worth 0.2, not %s', ad_reward());
   assert ad_cap() = 10, 'ten a day';
-  assert (ad_settings()->>'spacing_seconds')::int = 60, 'one a minute';
+  assert ad_settings()->'spacing_seconds' is null, 'no minute between ads any more (0026)';
+  assert (ad_settings()->>'stub_seconds')::int = 25, 'the stub ad is twenty-five seconds';
   assert (select public from config where key = 'ads'), 'the ad unit has to reach the browser';
   -- and the browser gets the unit, not the right to decide what it is worth
   assert has_table_privilege('authenticated', 'pool.config', 'update') = false, 'the client cannot reprice an ad';
@@ -127,35 +129,22 @@ do $$ declare nz uuid; before numeric; begin
   assert bal('22222222-2222-2222-2222-222222222222') = before, 'nothing credited';
 end $$;
 
--- --- 7. one ad a minute ---------------------------------------------------------------------------------
-do $$ declare nz uuid; begin
+-- --- 7. the next ad can start the moment one finishes (0026) -------------------------------------
+do $$ declare nz uuid; older uuid; begin
   perform test_as('22222222-2222-2222-2222-222222222222');
+  older := (rpc_ad_nonce()->>'nonce')::uuid;                  -- taken out and left for later
   nz := (rpc_ad_nonce()->>'nonce')::uuid;
   perform rpc_watch_ad(nz);                                   -- Ben's first, and it pays
-  begin
-    perform rpc_ad_nonce();
-    raise exception 'a second ad was offered inside the minute';
-  exception when others then if sqlerrm not like '%One ad a minute%' then raise; end if; end;
-  perform test_reset();
-
-  -- a nonce issued *before* the last credit is no way round it either
-  perform test_as('22222222-2222-2222-2222-222222222222');
-  begin
-    perform rpc_watch_ad(spare_nonce('22222222-2222-2222-2222-222222222222'));
-    raise exception 'an older nonce beat the spacing rule';
-  exception when others then if sqlerrm not like '%One ad a minute%' and sqlerrm not like '%took too long%' then raise; end if; end;
-  perform test_reset();
-
-  perform wind_back('22222222-2222-2222-2222-222222222222', 61);
-  perform test_as('22222222-2222-2222-2222-222222222222');
-  nz := (rpc_ad_nonce()->>'nonce')::uuid;                     -- a minute later, fine
-  assert (rpc_watch_ad(nz)->>'watched_today')::int = 2, 'the second of the day';
+  nz := (rpc_ad_nonce()->>'nonce')::uuid;                     -- and straight away, another
+  assert (rpc_watch_ad(nz)->>'watched_today')::int = 2, 'the second of the day, no wait';
+  -- a nonce issued earlier and never spent is still good until it expires
+  assert (rpc_watch_ad(older)->>'watched_today')::int = 3, 'an older unspent nonce still pays';
   perform test_reset();
 end $$;
 
 -- --- 8. ten a day, counted by the database --------------------------------------------------------------
 do $$ declare nz uuid; i int; begin
-  for i in 3..10 loop
+  for i in 4..10 loop
     perform wind_back('22222222-2222-2222-2222-222222222222', 61);
     perform test_as('22222222-2222-2222-2222-222222222222');
     nz := (rpc_ad_nonce()->>'nonce')::uuid;
@@ -188,7 +177,7 @@ do $$ declare nz uuid; before numeric; begin
   begin
     perform rpc_watch_ad(nz);
     raise exception 'an in-flight nonce broke the daily cap';
-  exception when others then if sqlerrm not like '%all ten%' and sqlerrm not like '%One ad a minute%' then raise; end if; end;
+  exception when others then if sqlerrm not like '%all ten%' then raise; end if; end;
   perform test_reset();
   assert bal('33333333-3333-3333-3333-333333333333') = before, 'nothing credited past the cap';
   -- the ten were planted straight into the table, so they never reached the ledger: clear them
@@ -225,7 +214,186 @@ do $$ begin
   perform test_reset();
 end $$;
 
--- --- 12. nothing is minted that the ledger does not say ----------------------------------------------------------
+-- --- 12. every credit records where it came from (0026) -----------------------------------------------
+create or replace function test_headers(ip text, ua text) returns void language sql as $$
+  select set_config('request.headers', json_build_object('cf-connecting-ip', ip, 'user-agent', ua)::text, true);
+$$;
+create or replace function last_view(u text) returns ad_views language sql stable
+security definer set search_path = pool, public as $$
+  select * from ad_views where user_id = u::uuid order by created_at desc, seq desc limit 1 $$;
+-- make each credit look like it happened `secs` apart, so the gap rule can be tested honestly
+create or replace function spread_out(u text, secs int) returns void
+language sql security definer set search_path = pool, public as $$
+  update ad_views v set created_at = now() - make_interval(secs => secs * (10 - v.seq)) where user_id = u::uuid;
+$$;
+create or replace function is_flagged(u text) returns boolean language sql stable
+security definer set search_path = pool, public as $$
+  select coalesce((select flagged from ad_fraud_scores() where user_id = u::uuid), false) $$;
+create or replace function reasons_of(u text) returns text language sql stable
+security definer set search_path = pool, public as $$
+  select array_to_string(reasons, '; ') from ad_fraud_scores() where user_id = u::uuid $$;
+
+do $$ declare nz uuid; v ad_views; begin
+  perform test_as('11111111-1111-1111-1111-111111111111');
+  perform test_headers('203.0.113.7', 'Mozilla/5.0 test');
+  nz := (rpc_ad_nonce()->>'nonce')::uuid;
+  perform rpc_watch_ad(nz, 'ABCDEF0123456789abcdef0123456789');
+  perform test_reset();
+  v := last_view('11111111-1111-1111-1111-111111111111');
+  assert v.fingerprint = 'abcdef0123456789abcdef0123456789', 'the fingerprint is kept, lower-cased';
+  assert v.ip = '203.0.113.7', 'the IP comes from the gateway''s header';
+  assert v.user_agent = 'Mozilla/5.0 test', 'and so does the user-agent';
+  -- a fingerprint that is not a hash is dropped, and the ad still pays
+  perform test_as('11111111-1111-1111-1111-111111111111');
+  nz := (rpc_ad_nonce()->>'nonce')::uuid;
+  assert (rpc_watch_ad(nz, 'not a hash; drop table')->>'credited')::numeric = 0.2, 'junk fingerprint, still credited';
+  perform test_reset();
+  assert (last_view('11111111-1111-1111-1111-111111111111')).fingerprint is null, 'and the junk was not stored';
+  assert has_function_privilege('authenticated', 'pool.ad_fraud_scores()', 'execute') = false, 'players cannot read the score';
+  assert has_table_privilege('authenticated', 'pool.admin_prize_claims', 'select') = false, 'nor the admin view';
+  assert has_table_privilege('anon', 'pool.admin_ad_fraud', 'select') = false, 'nor anyone signed out';
+end $$;
+
+-- --- 13. sharing a device or an IP with three or more others flags every one of them ---------------------
+insert into auth.users (id, email) values
+  ('44444444-4444-4444-4444-444444444444', 'dan@example.com'),
+  ('55555555-5555-5555-5555-555555555555', 'eda@example.com'),
+  ('66666666-6666-6666-6666-666666666666', 'fil@example.com'),
+  ('77777777-7777-7777-7777-777777777777', 'gul@example.com');
+
+do $$ declare u text; nz uuid; i int := 0; begin
+  -- three accounts on one device: each shares with two others, which is not yet three
+  foreach u in array array['44444444-4444-4444-4444-444444444444', '55555555-5555-5555-5555-555555555555',
+                           '66666666-6666-6666-6666-666666666666'] loop
+    i := i + 1;
+    perform test_as(u);
+    perform test_headers('198.51.100.' || i, 'ua');
+    nz := (rpc_ad_nonce()->>'nonce')::uuid;
+    perform rpc_watch_ad(nz, 'feedfacefeedface');
+    perform test_reset();
+  end loop;
+  assert not is_flagged('44444444-4444-4444-4444-444444444444'), 'two others is not three';
+
+  -- a fourth: now each of the four shares the device with three others
+  perform test_as('77777777-7777-7777-7777-777777777777');
+  perform test_headers('198.51.100.99', 'ua');
+  nz := (rpc_ad_nonce()->>'nonce')::uuid;
+  perform rpc_watch_ad(nz, 'feedfacefeedface');
+  perform test_reset();
+  assert is_flagged('44444444-4444-4444-4444-444444444444'), 'three others sharing a device is a flag';
+  assert is_flagged('77777777-7777-7777-7777-777777777777'), 'for every account on it';
+  assert reasons_of('77777777-7777-7777-7777-777777777777') like '%device shared with 3 other accounts%', reasons_of('77777777-7777-7777-7777-777777777777');
+  assert not is_flagged('11111111-1111-1111-1111-111111111111'), 'Ana is on her own device';
+
+  -- the same by IP: Ana and Cem join Dan's address, and with Eda that makes four on 198.51.100.1
+  foreach u in array array['11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333',
+                           '55555555-5555-5555-5555-555555555555'] loop
+    perform test_as(u);
+    perform test_headers('198.51.100.1', 'ua');
+    nz := (rpc_ad_nonce()->>'nonce')::uuid;
+    perform rpc_watch_ad(nz, null);
+    perform test_reset();
+  end loop;
+  assert is_flagged('11111111-1111-1111-1111-111111111111'), 'four accounts on one IP flags Ana';
+  assert reasons_of('11111111-1111-1111-1111-111111111111') like '%IP shared with 3 other accounts%', reasons_of('11111111-1111-1111-1111-111111111111');
+end $$;
+
+-- --- 14. credits averaging under twenty seconds apart are a flag; twenty-five is not ---------------------
+insert into auth.users (id, email) values
+  ('88888888-8888-8888-8888-888888888888', 'hal@example.com'),
+  ('99999999-9999-9999-9999-999999999999', 'ivo@example.com');
+do $$ declare nz uuid; i int; begin
+  for i in 1..4 loop
+    perform test_as('88888888-8888-8888-8888-888888888888');
+    perform test_headers('192.0.2.8', 'ua');
+    nz := (rpc_ad_nonce()->>'nonce')::uuid; perform rpc_watch_ad(nz, '8888888888888888');
+    perform test_as('99999999-9999-9999-9999-999999999999');
+    perform test_headers('192.0.2.9', 'ua');
+    nz := (rpc_ad_nonce()->>'nonce')::uuid; perform rpc_watch_ad(nz, '9999999999999999');
+    perform test_reset();
+  end loop;
+  perform spread_out('88888888-8888-8888-8888-888888888888', 5);    -- a bot
+  perform spread_out('99999999-9999-9999-9999-999999999999', 26);   -- back to back on the 25-second stub
+  assert is_flagged('88888888-8888-8888-8888-888888888888'), 'five seconds apart is a flag';
+  assert reasons_of('88888888-8888-8888-8888-888888888888') like '%ads average 5s apart%', reasons_of('88888888-8888-8888-8888-888888888888');
+  assert not is_flagged('99999999-9999-9999-9999-999999999999'), 'one ad straight after another is not';
+  -- flagged is not banned: Hal can still watch and be paid
+  perform test_as('88888888-8888-8888-8888-888888888888');
+  nz := (rpc_ad_nonce()->>'nonce')::uuid;
+  assert (rpc_watch_ad(nz, '8888888888888888')->>'credited')::numeric = 0.2, 'a flagged account still earns';
+  perform test_reset();
+end $$;
+
+-- --- 15. a flagged claim carries its warning in the admin view --------------------------------------------
+do $$ declare w text; begin
+  update profiles set balance = 1000000 where id in ('88888888-8888-8888-8888-888888888888', '99999999-9999-9999-9999-999999999999');
+  perform test_as('88888888-8888-8888-8888-888888888888'); perform rpc_claim_prize();
+  perform test_as('99999999-9999-9999-9999-999999999999'); perform rpc_claim_prize();
+  perform test_reset();
+  select warning into w from admin_prize_claims where user_id = '88888888-8888-8888-8888-888888888888';
+  assert w like '⚠ %ads average%', format('Hal''s claim should warn, says %s', w);
+  assert (select warning from admin_prize_claims where user_id = '99999999-9999-9999-9999-999999999999') is null, 'Ivo''s does not';
+  assert (select flagged from admin_ad_fraud where user_id = '88888888-8888-8888-8888-888888888888'), 'and the fraud list agrees';
+  -- the claims were played for the test; undo them, and the balances, before the ledger check
+  delete from prize_claims where user_id in ('88888888-8888-8888-8888-888888888888', '99999999-9999-9999-9999-999999999999');
+  update profiles p set balance = (select coalesce(sum(amount), 0) from ledger l where l.user_id = p.id)
+   where id in ('88888888-8888-8888-8888-888888888888', '99999999-9999-9999-9999-999999999999');
+end $$;
+
+-- --- 16. with the flag on, the first claim needs a verified phone — once, and one number per account -----
+do $$ declare r text; begin
+  update app_flags set enabled = true where key = 'phone_verification';
+  update profiles set balance = 1000000 where id in ('88888888-8888-8888-8888-888888888888', '99999999-9999-9999-9999-999999999999');
+  perform test_as('88888888-8888-8888-8888-888888888888');
+  assert (my_stats()->>'phone_needed')::boolean, 'the profile knows to ask';
+  begin perform rpc_claim_prize(); raise exception 'a claim went in without a phone';
+  exception when others then if sqlerrm not like '%Verify your phone%' then raise; end if; end;
+  -- the player cannot mark themselves verified
+  begin perform phone_mark_verified('88888888-8888-8888-8888-888888888888', '+905551234567');
+        raise exception 'a player verified their own phone';
+  exception when insufficient_privilege then null; end;
+  perform test_reset();
+
+  assert phone_can_start('88888888-8888-8888-8888-888888888888', '0555 123') like '%country code%', 'a number needs its country code';
+  assert phone_can_start('88888888-8888-8888-8888-888888888888', '+905551234567') is null, 'a real number may be sent a code';
+  perform phone_mark_verified('88888888-8888-8888-8888-888888888888', '+905551234567');
+
+  perform test_as('88888888-8888-8888-8888-888888888888');
+  assert not (my_stats()->>'phone_needed')::boolean, 'verified once, never asked again';
+  assert rpc_claim_prize() is not null, 'and the claim goes in';
+  perform test_reset();
+
+  -- Ivo cannot use Hal's number, either to be sent a code or to be marked with it
+  r := phone_can_start('99999999-9999-9999-9999-999999999999', '+905551234567');
+  assert r like '%already on another account%', coalesce(r, 'no refusal');
+  begin perform phone_mark_verified('99999999-9999-9999-9999-999999999999', '+905551234567');
+        raise exception 'one number went on two accounts';
+  exception when others then if sqlerrm not like '%already on another account%' then raise; end if; end;
+  -- and Hal cannot add a second
+  begin perform phone_mark_verified('88888888-8888-8888-8888-888888888888', '+359888123456');
+        raise exception 'one account took two numbers';
+  exception when others then if sqlerrm not like '%already verified%' then raise; end if; end;
+
+  -- codes are rationed: three to a number in a day
+  assert phone_can_start('99999999-9999-9999-9999-999999999999', '+359888000001') is null, 'one';
+  assert phone_can_start('99999999-9999-9999-9999-999999999999', '+359888000001') is null, 'two';
+  assert phone_can_start('99999999-9999-9999-9999-999999999999', '+359888000001') is null, 'three';
+  assert phone_can_start('99999999-9999-9999-9999-999999999999', '+359888000001') like 'Too many codes%', 'a fourth is refused';
+
+  -- with the flag off nobody is asked
+  update app_flags set enabled = false where key = 'phone_verification';
+  perform test_as('99999999-9999-9999-9999-999999999999');
+  assert not (my_stats()->>'phone_needed')::boolean, 'flag off, no phone';
+  assert rpc_claim_prize() is not null, 'and the claim goes in without one';
+  perform test_reset();
+  assert has_table_privilege('authenticated', 'pool.phone_verifications', 'select') = false, 'numbers are not readable';
+  assert has_function_privilege('authenticated', 'pool.phone_can_start(uuid, text)', 'execute') = false, 'only the edge function sends codes';
+  delete from prize_claims where user_id in ('88888888-8888-8888-8888-888888888888', '99999999-9999-9999-9999-999999999999');
+  update profiles p set balance = (select coalesce(sum(amount), 0) from ledger l where l.user_id = p.id)
+   where id in ('88888888-8888-8888-8888-888888888888', '99999999-9999-9999-9999-999999999999');
+end $$;
+
+-- --- 17. nothing is minted that the ledger does not say ----------------------------------------------------------
 do $$ declare credited numeric; views numeric; begin
   select coalesce(sum(amount), 0) into credited from ledger where reason = 'ad_reward';
   select coalesce(sum(reward), 0) into views from ad_views;

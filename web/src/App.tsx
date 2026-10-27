@@ -14,7 +14,7 @@ import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import About from "./pages/About";
 import Privacy from "./pages/Privacy";
-import { ConsentBar, Footer } from "./components/Consent";
+import { ConsentBar, Footer } from "./features/ads/ConsentBar";
 
 export default function App() {
   const { session, loading } = useAuth();

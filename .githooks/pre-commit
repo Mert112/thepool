@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Lint every staged web/ file and refuse the commit on an error. Prettier is set up
+# (`npm run format -- <files>`) but not enforced: on this codebase it grows the code ~60%
+# (see CHANGELOG 2026-10-27). To enforce it, add:  npx prettier --check $changed
+#   one-time setup:  git config core.hooksPath .githooks
+set -euo pipefail
+changed=$(git diff --cached --name-only --diff-filter=ACMR -- 'web/*.ts' 'web/*.tsx' 'web/*.js' 'web/*.mjs' | sed 's#^web/##')
+[ -z "$changed" ] && exit 0
+cd web && npx eslint $changed

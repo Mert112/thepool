@@ -1,13 +1,14 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-// Service-role client: these functions run from cron, never on behalf of a user.
+// Service-role client. send-notifications runs from the sync host; phone-verify checks the
+// player's own token first and only then acts for them through this.
 export function serviceClient() {
   const url = Deno.env.get("SUPABASE_URL")!;
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   return createClient(url, key, { auth: { persistSession: false }, db: { schema: "pool" } });
 }
 
-// Only cron (with the service key) may call these functions.
+// Only the sync host (with the service key) may call send-notifications.
 export function assertServiceCall(req: Request) {
   const auth = req.headers.get("Authorization") ?? "";
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

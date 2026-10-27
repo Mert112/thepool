@@ -88,14 +88,14 @@ insert into players (id, team_id, name, sport) values
 
 -- --- 1. a point is a stake now -----------------------------------------------------
 do $$ begin
-  assert (select array_agg(amount order by sort_order) from stakes) = array[1, 2, 5, 10, 25, 50], 'the six stakes';
+  assert (select array_agg(amount order by sort_order) from stakes) = array[1, 5, 10, 25, 50], 'the five quick stakes (0027)';
 end $$;
 select fixture(9500, 'PL');
 do $$ begin
   begin
     perform play('11111111-aaaa-0000-0000-000000000001', 9500, '[{"call_type":"scorer","player_id":90011,"stake":100}]');
-    raise exception 'a 100 stake was accepted';
-  exception when others then if sqlerrm not like '%1, 2, 5, 10, 25 or 50%' then raise; end if; end;
+    raise exception 'a 100 stake swamped an empty pot';
+  exception when others then if sqlerrm not like '%most you can stake on this call%' then raise; end if; end;
 end $$;
 select play(:'A', 9500, '[{"call_type":"scorer","player_id":90011,"stake":1}]');
 do $$ begin

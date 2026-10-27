@@ -2,12 +2,14 @@
 // and the full prediction history — every card played, with each call and whether it hit or missed.
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { claimPrize, myHistory, myIcons, myLedger, myStats, refreshIcons, setIcon,
-  type HistoryCall, type HistoryCard, type IconRow, type LedgerRow } from "../lib/api";
+import { claimPrize, myLedger, myStats } from "../features/economy/api";
+import { myHistory, myIcons, refreshIcons, setIcon, type HistoryCall, type HistoryCard, type IconRow } from "../features/profile/api";
+import { PhoneDialog } from "../features/economy/PhoneDialog";
 import { useAuth, useLoad } from "../lib/auth";
-import { labelOf } from "../lib/calls";
-import { useI18n, type Dict } from "../i18n";
-import { AdModal, Bar, ErrorBox, Spinner } from "../components/ui";
+import { labelOf } from "../features/card/calls";
+import { useI18n, type Dict } from "../lib/i18n";
+import { AdModal } from "../features/ads/AdModal";
+import { Bar, ErrorBox, Spinner } from "../components/ui";
 
 const STATE: Record<HistoryCall["result"], keyof Dict["live"]["state"]> = {
   hit: "hit", miss: "miss", void: "void", pending: "open",
@@ -22,6 +24,7 @@ export default function Profile() {
   const [ads, setAds] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimErr, setClaimErr] = useState<string | null>(null);
+  const [phone, setPhone] = useState(false);
   const [iconErr, setIconErr] = useState<string | null>(null);
   const { data, error, loading, reload } = useLoad(async () => {
     await refreshIcons();   // pick up anything earned since the last visit
@@ -38,7 +41,9 @@ export default function Profile() {
   const max = Math.max(1, ...s.competitions.map((c) => c.points));
   const balance = profile?.balance ?? s.balance;
   const pct = Math.min(100, (balance / s.prize_target) * 100);
-  const claim = async () => {
+  const claim = async (phoneDone = false) => {
+    // §0026 the first claim needs a verified phone; the dialog comes back here once it is
+    if (s.phone_needed && !phoneDone) { setPhone(true); return; }
     setClaiming(true); setClaimErr(null);
     try { await claimPrize(); reload(); } catch (e: any) { setClaimErr(e.message ?? String(e)); }
     setClaiming(false);
@@ -100,11 +105,12 @@ export default function Profile() {
           {s.prize_claim?.status === "pending" ? (
             <div className="banner ok" style={{ marginTop: 12, marginBottom: 0 }} role="status"><b>{t.profile.claimReceived}</b>{t.profile.claimFiled(fmt.ago(s.prize_claim.created_at))}</div>
           ) : (
-            <button className="btn big" style={{ marginTop: 12 }} disabled={balance < s.prize_target || claiming} onClick={claim}>
+            <button className="btn big" style={{ marginTop: 12 }} disabled={balance < s.prize_target || claiming} onClick={() => claim()}>
               {claiming ? t.profile.claiming : t.profile.claim}
             </button>
           )}
           <ErrorBox msg={claimErr} />
+          {phone && <PhoneDialog onClose={() => setPhone(false)} onVerified={() => { setPhone(false); claim(true); }} />}
           {s.prize_claim && s.prize_claim.status !== "pending" && <div className="tiny muted" style={{ marginTop: 8 }}>{t.profile.lastClaim(t.profile.claimStatus[s.prize_claim.status])}</div>}
         </div>
 

@@ -102,7 +102,7 @@ do $$ begin
   assert bal('11111111-aaaa-0000-0000-000000000001') = 100, 'Ana starts on 100';
   assert (select count(*) from ledger where reason = 'signup') = 4, 'one start each';
   assert ledger_sum('11111111-aaaa-0000-0000-000000000001') = 100, 'the ledger is the balance';
-  assert (select array_agg(amount order by sort_order) from stakes) = array[1, 2, 5, 10, 25, 50], 'the six stakes';
+  assert (select array_agg(amount order by sort_order) from stakes) = array[1, 5, 10, 25, 50], 'the five quick stakes (0027)';
   assert credited() = 400, 'four starts of 100';
   perform assert_conserved('a fresh season');
 end $$;
@@ -116,12 +116,19 @@ do $$ begin
   assert to_regprocedure('pool.call_multiplier(pool.markets, text)') is null, 'call_multiplier is gone';
 end $$;
 
--- --- 3. a stake is one of six, and nothing moves until kick-off --------------------------------
+-- --- 3. a stake is a whole number, within the balance and the pot, and nothing moves until kick-off
 do $$ begin
   assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
-    '[{"call_type":"winner","team_id":9001,"stake":30}]', '%1, 2, 5, 10, 25 or 50%'), 'an invented stake';
+    '[{"call_type":"winner","team_id":9001,"stake":0}]', '%whole number%'), 'zero is not a stake';
   assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
-    '[{"call_type":"winner","team_id":9001,"stake":100}]', '%1, 2, 5, 10, 25 or 50%'), 'above the top stake';
+    '[{"call_type":"winner","team_id":9001,"stake":2.5}]', '%whole number%'), 'nor a fraction';
+  assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
+    '[{"call_type":"winner","team_id":9001,"stake":"7"}]', '%whole number%'), 'nor a string';
+  assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
+    '[{"call_type":"winner","team_id":9001,"stake":101}]', '%at most 100%'), 'nor more than the balance';
+  assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
+    '[{"call_type":"winner","team_id":9001,"stake":11}]', '%most you can stake on this call right now is 10%'),
+    'an empty pot takes ten at most';
 end $$;
 
 select play(:'A', 9000, '[
@@ -130,7 +137,7 @@ select play(:'A', 9000, '[
   {"call_type":"scorer","player_id":90012,"stake":5}
 ]');
 select play(:'B', 9000, '[
-  {"call_type":"winner","team_id":9002,"stake":25},
+  {"call_type":"winner","team_id":9002,"stake":15},
   {"call_type":"score","home_goals":1,"away_goals":2,"stake":5}
 ]');
 do $$ begin
@@ -142,20 +149,34 @@ end $$;
 -- --- 4. the pot and the price of a pick are visible before lock (§4) ---------------------------
 do $$ declare card uuid := (select id from cards where match_id = 9000); p record; begin
   select * into p from card_pots(card) where call_type = 'winner' and key = '9001';
-  assert p.pot = 35, format('the result pot is 35, not %s', p.pot);
+  assert p.pot = 25, format('the result pot is 25, not %s', p.pot);
   assert p.pick_stake = 10, 'Rovers carries 10 of it';
-  assert p.purse = 31.5, format('the purse is 31.50, not %s', p.purse);
-  assert p.per_point = 3.15, format('a point on Rovers returns 3.15, not %s', p.per_point);
+  assert p.purse = 22.5, format('the purse is 22.50, not %s', p.purse);
+  assert p.per_point = 2.25, format('a point on Rovers returns 2.25, not %s', p.per_point);
   select * into p from card_pots(card) where call_type = 'winner' and key = '9002';
-  assert p.per_point = 1.26, format('a point on Athletic returns 1.26, not %s', p.per_point);
+  assert p.per_point = 1.5, format('a point on Athletic returns 1.50, not %s', p.per_point);
+end $$;
+
+-- --- 4b. the cap: half of what the others have in the pot, plus ten ----------------------------------
+do $$ declare card uuid := (select id from cards where match_id = 9000); begin
+  -- Ana's 10 is the pot Ben measured against: 5 + 10 = 15 was his ceiling, and 16 is over it
+  assert stake_cap(card, 'winner', '22222222-bbbb-0000-0000-000000000002') = 15, 'half of 10, plus 10';
+  assert rejects('22222222-bbbb-0000-0000-000000000002', 9000, '[
+    {"call_type":"winner","team_id":9002,"stake":16},
+    {"call_type":"score","home_goals":1,"away_goals":2,"stake":5}]', '%most you can stake on this call right now is 15%'),
+    'nobody takes over a pot after others have staked';
+  -- Ben's 15 lifts Ana's ceiling to 17; her saved 10 is hers whatever the pot does
+  assert stake_cap(card, 'winner', '11111111-aaaa-0000-0000-000000000001') = 17, 'half of 15, rounded down, plus 10';
+  -- Cem is not in this pot at all: what he faces is half of all 25, plus 10
+  assert stake_cap(card, 'winner', '33333333-cccc-0000-0000-000000000003') = 22, 'a newcomer measures the whole pot';
 end $$;
 
 -- --- 5. the stake is deducted when the card locks ----------------------------------------------
 select kickoff(9000);
 do $$ begin
   assert bal('11111111-aaaa-0000-0000-000000000001') = 80, 'Ana staked 20';
-  assert bal('22222222-bbbb-0000-0000-000000000002') = 70, 'Ben staked 30';
-  assert inflight() = 50, 'and 50 is riding on the pots';
+  assert bal('22222222-bbbb-0000-0000-000000000002') = 80, 'Ben staked 20';
+  assert inflight() = 40, 'and 40 is riding on the pots';
   perform assert_conserved('locked, nothing settled');
 end $$;
 
@@ -167,18 +188,18 @@ select finish(9000, 2, 1);
 do $$ begin
   assert res('11111111-aaaa-0000-0000-000000000001', 9000, 'winner') = 'hit', 'Rovers won it';
   assert res('11111111-aaaa-0000-0000-000000000001', 9000, 'scorer') = 'void', 'Pires never came on';
-  -- the result: pot 35, rake 3.50, 31.50 to Ana alone. The scoreline: pot 10, rake 1.00, 9.00 to Ana.
-  assert house() = 4.5, format('the house took 3.50 and 1.00, not %s', house());
+  -- the result: pot 25, rake 2.50, 22.50 to Ana alone. The scoreline: pot 10, rake 1.00, 9.00 to Ana.
+  assert house() = 3.5, format('the house took 2.50 and 1.00, not %s', house());
   assert (select points_awarded from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
-          where c.match_id = 9000 and k.call_type = 'winner' and e.user_id = '11111111-aaaa-0000-0000-000000000001') = 31.5, 'the result paid 31.50';
+          where c.match_id = 9000 and k.call_type = 'winner' and e.user_id = '11111111-aaaa-0000-0000-000000000001') = 22.5, 'the result paid 22.50';
   assert (select points_awarded from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
           where c.match_id = 9000 and k.call_type = 'score' and e.user_id = '11111111-aaaa-0000-0000-000000000001') = 9, 'the scoreline paid 9.00';
   -- a void is refunded in full and never enters the pot, so no rake is taken on it
   assert (select coalesce(sum(amount),0) from ledger where reason = 'refund' and user_id = '11111111-aaaa-0000-0000-000000000001') = 5, 'the void came back whole';
-  assert bal('11111111-aaaa-0000-0000-000000000001') = 80 + 31.5 + 9 + 5, format('Ana is on %s', bal('11111111-aaaa-0000-0000-000000000001'));
-  assert bal('22222222-bbbb-0000-0000-000000000002') = 70, 'Ben got nothing back';
-  assert pts('11111111-aaaa-0000-0000-000000000001', 9000) = 25.5, format('Ana''s card is worth %s', pts('11111111-aaaa-0000-0000-000000000001', 9000));
-  assert pts('22222222-bbbb-0000-0000-000000000002', 9000) = -30, 'Ben''s card cost him 30';
+  assert bal('11111111-aaaa-0000-0000-000000000001') = 80 + 22.5 + 9 + 5, format('Ana is on %s', bal('11111111-aaaa-0000-0000-000000000001'));
+  assert bal('22222222-bbbb-0000-0000-000000000002') = 80, 'Ben got nothing back';
+  assert pts('11111111-aaaa-0000-0000-000000000001', 9000) = 16.5, format('Ana''s card is worth %s', pts('11111111-aaaa-0000-0000-000000000001', 9000));
+  assert pts('22222222-bbbb-0000-0000-000000000002', 9000) = -20, 'Ben''s card cost him 20';
   assert inflight() = 0, 'nothing is left riding';
   perform assert_conserved('the first card settled');
 end $$;
@@ -204,12 +225,14 @@ end $$;
 
 -- --- 9. you cannot promise more than you hold -----------------------------------------------------
 do $$ declare dee text := '44444444-dddd-0000-0000-000000000004'; begin
-  perform apply_ledger(dee::uuid, 'adjustment', 'test-drain', -60);
-  assert bal(dee) = 40, 'Dee is down to 40';
-  perform play(dee, 9200, '[{"call_type":"winner","team_id":9001,"stake":25}]');
-  assert rejects(dee, 9300, '[{"call_type":"winner","team_id":9001,"stake":25}]',
-    '%Not enough points%'), 'two cards at 25 would take her past 40';
-  assert committed_stake(dee::uuid) = 25, 'and the refused card changed nothing';
+  perform apply_ledger(dee::uuid, 'adjustment', 'test-drain', -85);
+  assert bal(dee) = 15, 'Dee is down to 15';
+  perform play(dee, 9200, '[{"call_type":"winner","team_id":9001,"stake":10}]');
+  assert rejects(dee, 9300, '[{"call_type":"winner","team_id":9001,"stake":10}]',
+    '%at most 5%'), 'one call at 10 is more than the 5 she has free';
+  assert rejects(dee, 9300, '[{"call_type":"winner","team_id":9001,"stake":5},{"call_type":"score","home_goals":1,"away_goals":0,"stake":5}]',
+    '%Not enough points%'), 'nor can two calls add up past it';
+  assert committed_stake(dee::uuid) = 10, 'and the refused card changed nothing';
   perform assert_conserved('a drained player');
 end $$;
 
@@ -308,7 +331,7 @@ end $$;
 -- The headline: with nothing minted, every point in the game came from a season start or an ad.
 do $$ declare c numeric := credited(); begin
   perform assert_conserved('the end of the season');
-  assert c = 400 - 60 + 2 + 1000000, format('credited is four starts, Dee''s drain, ten ads at 0.2 and the top-up: %s', c);
+  assert c = 400 - 85 + 2 + 1000000, format('credited is four starts, Dee''s drain, ten ads at 0.2 and the top-up: %s', c);
   assert held() + house() <= c, 'balances and the house never exceed what was credited';
   -- every point that left a balance is refunded, won, with the house, in a jackpot, or still riding
   assert -(select coalesce(sum(amount),0) from ledger where reason = 'stake')

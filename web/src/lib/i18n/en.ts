@@ -68,7 +68,7 @@ export const en = {
     label: "Advertisement · placeholder",
     watchOn: "Watch it to the end and the points are yours.",
     watchDone: "Finished. Collect your points.",
-    stub: "The thirty-second stand-in, kept for testing while the real rewarded slot is switched off. The reward, the ten-a-day limit and the minute between ads are counted in the database either way. Ads are a trickle by design — the points worth having come out of the pots.",
+    stub: "The twenty-five-second stand-in, kept for testing while the real rewarded slot is switched off. The reward, the ten-a-day limit and the device checks are counted in the database either way. Ads are a trickle by design — the points worth having come out of the pots.",
     collecting: "Collecting…",
     collectIn: (amount: number, secs: number) => `Collect ${n(amount)} points in ${secs}s`,
     collect: (amount: number) => `Collect ${n(amount)} points`,
@@ -184,6 +184,7 @@ export const en = {
     squadLoading: "Squad still loading for this side — check back in a minute.",
     redWindow: "When? Optional — narrow the call and fewer people will be right, so the pot splits fewer ways. Stoppage time counts in its half's last window.",
     stake: "Stake",
+    stakeCap: (n: string) => `max ${n} here`,
     wholePurse: "the whole purse, if nobody else joins you",
     backIfLands: "back if it lands",
     about: "about",
@@ -263,7 +264,7 @@ export const en = {
     wearHint: (name: string) => `${name} — tap to wear`,
     getPoints: "Get points",
     adsLeft: (left: number) => `${left} of 10 left today`,
-    adBlurb: (amount: string) => `Watch a 30-second ad for ${amount} points. Ten a day, counted by the database and reset at midnight UTC. It is a trickle on purpose: the points worth having come out of the pots.`,
+    adBlurb: (amount: string) => `Watch a 25-second ad for ${amount} points. Ten a day, counted by the database and reset at midnight UTC. It is a trickle on purpose: the points worth having come out of the pots.`,
     adsOff: "Switched off right now",
     watchAd: (amount: string) => `Watch an ad · +${amount}`,
     backTomorrow: "Back tomorrow",
@@ -316,7 +317,8 @@ export const en = {
       result: ["Result mail at full time", "Standings and your card the moment the match settles."],
       weekly_digest: ["Friday crew card", "The week ahead and where your crew stands."],
     } as Record<string, [string, string]>,
-    watched: "Watched competitions",
+    watchOn: "Mail me when a card opens here",
+    watchOff: "Stop the new-card mail for this league",
     watchedBlurb: "New public cards in these competitions trigger the \"new card\" mail. Crew cards always do.",
     displayName: "Display name",
     language: "Language",
@@ -432,7 +434,7 @@ export const en = {
     complexCard: "Complex card",
     complexCardIs: " — adds the handicap, the exact scoreline, a goalscorer, an assist, a yellow and a red. Five minutes.",
     theStake: "The stake",
-    theStakeIs: " — 1, 2, 5, 10, 25 or 50 on each call. The fewer people on your pick, the more of the pot it takes.",
+    theStakeIs: " — any whole number of points on each call, up to what you have free and to half the pot plus 10, so nobody can swamp a pot late. 1, 5, 10, 25 and 50 are one tap. The fewer people on your pick, the more of the pot it takes.",
     theJackpot: "The jackpot",
     theJackpotIs: " — a call nobody lands rolls its pot into the next match in that competition.",
   },
@@ -441,7 +443,8 @@ export const en = {
     more: "More leagues",
     title: "Competitions",
     blurb: "The board shows the competitions you follow. Everything the provider carries is here — about 1,250 leagues and cups, in 171 countries.",
-    following: "You follow",
+    following: "My leagues",
+    noneFollowed: "No leagues yet — pick a country below.",
     byCountry: "By country",
     pick: "Pick a country",
     none: "Nothing here.",
@@ -454,6 +457,16 @@ export const en = {
     isDefault: "on by default",
     nationalOnly: "Türkiye and Bulgaria only",
     emptyBoard: "You follow no competitions, so the board is empty.",
+  },
+
+  phone: {
+    title: "Verify your phone",
+    blurb: "Once, before your first claim: we text you a code. One number per account, and it is used for nothing else.",
+    code: "The code from the text",
+    sentTo: (n: string) => `Code sent to ${n}.`,
+    change: "Change number",
+    send: "Text me a code",
+    verify: "Verify and claim",
   },
 
   consent: {
@@ -488,10 +501,11 @@ export const en = {
   },
   privacy: {
     title: "Privacy",
-    updated: "Last updated 26 October 2026",
+    updated: "Last updated 27 October 2026",
     sections: [
-      ["What we hold", "Your email address, the display name you choose, the language you pick, your crews, your cards and calls, your points and every movement of them. That is all of it. We ask for nothing else — no real name, no address, no payment details, because there is nothing to pay for."],
+      ["What we hold", "Your email address, the display name you choose, the language you pick, your crews, your cards and calls, your points and every movement of them. That is all of it, apart from the fraud checks below. We ask for nothing else — no real name, no address, no payment details, because there is nothing to pay for."],
       ["Why", "To run the game and to send you the mail you switched on. Nothing is sold, and nothing is shared with anyone except the processors below."],
+      ["Fraud checks on ads and prizes", "Each time an ad pays out we record the IP address and browser user-agent the request came from, and a one-way hash of your browser's settings (screen size, time zone, language and the like). It is used for one thing: spotting many accounts run from one device or one connection, so the prize goes to a real player. Before your first prize claim we may ask for a phone number and text you a code through Twilio; the number is kept to stop it being used on a second account, and never for anything else."],
       ["Signing in", "There is no password anywhere in the system. You sign in with a one-time link sent to your email."],
       ["Cookies and local storage", "Essential: your sign-in session, your language, and your answer to the cookie banner. These are not optional — without them the site does not work, and they are not used to track you."],
       ["Google AdSense and rewarded ads", "If you accept non-essential cookies, Google AdSense and Google Ad Manager are loaded. Google and its partners use cookies and similar technologies to serve and measure ads, and to personalise what you see based on your previous visits to this and other sites. You can turn personalised advertising off at any time in Google's own settings, and you can reject it here outright — then the ad scripts are never loaded at all."],
@@ -559,6 +573,15 @@ export const en = {
   // Keyed on the English the database raises, so a message we have not translated still reaches the
   // player in English rather than disappearing.
   errors: {
+    "Verify your phone number before your first claim.": "Verify your phone number before your first claim.",
+    "Phone verification is switched off right now.": "Phone verification is switched off right now.",
+    "Phone verification is not set up yet.": "Phone verification is not set up yet.",
+    "That phone number is already on another account.": "That phone number is already on another account.",
+    "Your phone is already verified.": "Your phone is already verified.",
+    "Too many codes today. Try again tomorrow.": "Too many codes today. Try again tomorrow.",
+    "Enter the number with its country code, like +90 555 123 4567.": "Enter the number with its country code, like +90 555 123 4567.",
+    "We could not text that number. Check it and try again.": "We could not text that number. Check it and try again.",
+    "That code is not right. Check the text and try again.": "That code is not right. Check the text and try again.",
     "not signed in": "You are signed out. Sign in again and the card is where you left it.",
     "unknown card": "That card is gone.",
     "unknown match": "That fixture is gone.",
@@ -597,7 +620,9 @@ export const en = {
   } as Record<string, string>,
   // the two the database formats with numbers in them
   errorPatterns: {
-    stake: (allowed: string, got: string) => `A stake is ${allowed} points — not ${got}.`,
+    wholeStake: (got: string) => `A stake is a whole number of points — not ${got}.`,
+    stakeFree: (n: string) => `You can stake at most ${n} on one call — that is what you have free.`,
+    stakeCap: (n: string) => `The most you can stake on this call right now is ${n} — half the pot plus 10.`,
     notEnough: (hold: string, stakes: string, promised: string) =>
       `Not enough points: you hold ${hold}, this card stakes ${stakes}, and ${promised} is already promised to other open cards. Lower a stake or drop a call.`,
     prizeShort: (hold: string) => `A PlayStation 5 takes 1,000,000 points. You hold ${hold}.`,

@@ -1,10 +1,12 @@
 // §5.5 Live and full time: score, match log, your card with per-call state, standings, receipt.
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getCard, getCrewPosts, getEntries, getEvents, getMarkets, getMatch, getSquads, post, type Call, type Entry } from "../lib/api";
+import { getCard, getEntries, getEvents, getMarkets, getSquads, type Call, type Entry } from "../features/card/api";
+import { getCrewPosts, post } from "../features/crews/api";
+import { getMatch } from "../features/board/api";
 import { useAuth, useLoad } from "../lib/auth";
-import { useI18n } from "../i18n";
-import { labelOf, liveClock, marketShort, marketTitle, offered, partsOf } from "../lib/calls";
+import { useI18n } from "../lib/i18n";
+import { labelOf, liveClock, marketShort, marketTitle, offered, partsOf } from "../features/card/calls";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 
 export default function LiveCard() {

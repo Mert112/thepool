@@ -13,13 +13,13 @@
 // what the database kept, so "I filled it in" and "it says No pick" can never disagree again.
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getCard, getCardPots, getCrowd, getMarkets, getMatch, getMyEntry, getSquads, myCommittedStake, saveCalls, STAKES,
-  type Call, type CallType, type Market, type Player, type PotRow } from "../lib/api";
+import { getCard, getCrowd, getMarkets, getMyEntry, getSquads, saveCalls, type Call, type CallType, type Market, type Player } from "../features/card/api";
+import { getCardPots, myCommittedStake, stakeLimit, STAKES, type PotRow } from "../features/economy/api";
+import { getMatch } from "../features/board/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { soon } from "../lib/format";
-import { translateError, useI18n } from "../i18n";
-import { clashes, isPlayerMarket, labelOf, lineOf, marketExplainer, marketTitle, offered, partsOf, perPoint, signed,
-  spreadFor, teamName as nameOf } from "../lib/calls";
+import { translateError, useI18n } from "../lib/i18n";
+import { clashes, isPlayerMarket, labelOf, lineOf, marketExplainer, marketTitle, offered, partsOf, perPoint, signed, spreadFor, teamName as nameOf } from "../features/card/calls";
 import { Bar, Empty, ErrorBox, Spinner } from "../components/ui";
 
 type Picks = Partial<Record<CallType, Call>>;
@@ -118,6 +118,12 @@ export default function FillCard() {
   // what is left for this card: the balance, less what other open cards have already promised
   const purse = (profile?.balance ?? 0) - (data?.elsewhere ?? 0);
   const overdrawn = staked > purse;
+  // §0027 the most one call can take (the server applies the same rule)
+  const limit = (ct: CallType) => stakeLimit(potOf(ct)?.pot ?? 0, data?.entry?.calls.find((c) => c.call_type === ct)?.stake ?? 0, purse);
+  const free = Math.max(0, Math.floor(purse));
+  const potCap = (ct: CallType) => limit(ct).cap;
+  const maxStake = (ct: CallType) => limit(ct).max;
+  const badStake = slip.some((k) => { const n = stakeOf(k.call_type); return !Number.isInteger(n) || n < 1 || n > maxStake(k.call_type); });
 
   // what identifies a pick, for checking the database kept what we sent. `line` is the server's to set.
   const sig = (c: Call) => [c.call_type, c.team_id ?? "", c.yes ?? "", c.player_id ?? "", c.home_goals ?? "", c.away_goals ?? "", c.pick ?? "", c.stake ?? DEFAULT_STAKE].join("|");
@@ -304,8 +310,13 @@ export default function FillCard() {
                   <div className="stake-row">
                     <span className="eyebrow">{t.fill.stake}</span>
                     {STAKES.map((n) => (
-                      <button key={n} disabled={!editable} className={"chip stake" + (stakeOf(k.call_type) === n ? " on" : "")} onClick={() => setStake(k.call_type, n)}>{fmt.num(n)}</button>
+                      <button key={n} disabled={!editable || n > maxStake(k.call_type)} className={"chip stake" + (stakeOf(k.call_type) === n ? " on" : "")} onClick={() => setStake(k.call_type, n)}>{fmt.num(n)}</button>
                     ))}
+                    <input className="input stake-input" type="number" inputMode="numeric" min={1} max={maxStake(k.call_type)} step={1}
+                           disabled={!editable} aria-label={t.fill.stake} value={stakeOf(k.call_type) || ""}
+                           aria-invalid={stakeOf(k.call_type) < 1 || stakeOf(k.call_type) > maxStake(k.call_type)}
+                           onChange={(e) => setStake(k.call_type, e.target.value === "" ? 0 : Math.trunc(Number(e.target.value)))} />
+                    {editable && potCap(k.call_type) < free && <span className="tiny muted">{t.fill.stakeCap(fmt.num(potCap(k.call_type)))}</span>}
                     <span className="stake-pay">{payout(k) == null ? t.fill.wholePurse : <>{t.fill.about} <b>{fmt.pts(payout(k))}</b> {t.fill.backIfLands}</>}</span>
                   </div>
                 )}
@@ -353,7 +364,7 @@ export default function FillCard() {
           <div className="tiny muted">{t.fill.slipTotal(fmt.pts(staked))}</div>
         </div>
         {editable ? (
-          <button className="btn big" disabled={saving || overdrawn || (slip.length === 0 && !data!.entry)} onClick={save}>
+          <button className="btn big" disabled={saving || overdrawn || badStake || (slip.length === 0 && !data!.entry)} onClick={save}>
             {saving ? t.common.saving : !data!.entry ? t.fill.saveCard : slip.length ? t.fill.updateCard : t.fill.withdrawCard}
           </button>
         ) : (

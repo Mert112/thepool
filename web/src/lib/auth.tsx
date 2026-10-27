@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import { getProfile, setLanguage, type Profile } from "./api";
-import { useI18n } from "../i18n";
+import { getProfile, setLanguage, type Profile } from "../features/profile/api";
+import { forgetFollows, reloadFollows } from "../features/board/follows";
+import { useI18n } from "./i18n";
 
 type Auth = { session: Session | null; profile: Profile | null; loading: boolean; refreshProfile: () => Promise<void> };
 const Ctx = createContext<Auth>({ session: null, profile: null, loading: true, refreshProfile: async () => {} });
@@ -37,7 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // never await Supabase calls inside this callback (it runs under the auth lock)
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      if (!s) { setProfile(null); return; }
+      if (!s) { setProfile(null); forgetFollows(); return; }
+      if (_event === "SIGNED_IN") setTimeout(() => { reloadFollows(); }, 0);
       setTimeout(() => { getProfile(s.user.id).then(adopt).catch(() => {}); }, 0);
     });
     return () => sub.subscription.unsubscribe();

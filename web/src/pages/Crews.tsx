@@ -1,9 +1,10 @@
 // §5.6 The crew list
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createCrew, crewScore, getCrew, getCrewCards, getCrewMembers, getMyCrews, joinCrew, leaderboard } from "../lib/api";
+import { createCrew, crewScore, getCrew, getCrewCards, getCrewMembers, getMyCrews, joinCrew } from "../features/crews/api";
+import { leaderboard } from "../features/economy/api";
 import { useAuth, useLoad } from "../lib/auth";
-import { useI18n } from "../i18n";
+import { useI18n } from "../lib/i18n";
 import { Empty, ErrorBox, Modal, Spinner } from "../components/ui";
 
 export default function Crews() {

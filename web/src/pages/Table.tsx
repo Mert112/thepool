@@ -1,8 +1,10 @@
 // §5.8 The table: overall, per crew, this week, per competition — with rank movement
 import { useState } from "react";
-import { getCompetitions, getMyCrews, leaderboard } from "../lib/api";
+import { getCompetitions } from "../features/board/api";
+import { getMyCrews } from "../features/crews/api";
+import { leaderboard } from "../features/economy/api";
 import { useAuth, useLoad } from "../lib/auth";
-import { useI18n } from "../i18n";
+import { useI18n } from "../lib/i18n";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
 
 type Scope = { id: string; label: string; scope: "overall" | "crew" | "week" | "competition"; key?: string };

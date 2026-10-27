@@ -70,3 +70,24 @@ export async function showRewarded(adUnitPath: string): Promise<RewardedResult> 
     } catch { done("unavailable"); }
   });
 }
+
+/**
+ * §0026 A hash of stable browser traits, sent with each ad credit for fraud scoring. It is not a
+ * tracker: it is never stored in the browser, never sent anywhere else, and only compared with
+ * other accounts' credits. Null where the browser cannot hash (the server then scores on IP alone).
+ */
+export async function deviceFingerprint(): Promise<string | null> {
+  try {
+    const n = navigator as Navigator & { deviceMemory?: number };
+    let canvas = "";
+    try {
+      const c = document.createElement("canvas");
+      const g = c.getContext("2d");
+      if (g) { g.textBaseline = "top"; g.font = "14px Arial"; g.fillText("The Pool ⚽ 0.2", 2, 2); canvas = c.toDataURL(); }
+    } catch { /* some browsers block canvas reads; the rest still counts */ }
+    const traits = [n.userAgent, n.language, n.platform, n.hardwareConcurrency, n.deviceMemory,
+      screen.width, screen.height, screen.colorDepth, Intl.DateTimeFormat().resolvedOptions().timeZone, canvas].join("|");
+    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(traits));
+    return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch { return null; }
+}

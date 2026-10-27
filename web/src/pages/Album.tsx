@@ -1,9 +1,11 @@
 // §5.7 The album: competitions × call types, a cell fills the first time you land it
 import { Fragment } from "react";
-import { getCompetitions, getMarkets, getStickers } from "../lib/api";
+import { getCompetitions } from "../features/board/api";
+import { getMarkets } from "../features/card/api";
+import { getStickers } from "../features/profile/api";
 import { useLoad } from "../lib/auth";
-import { marketTitle } from "../lib/calls";
-import { useI18n } from "../i18n";
+import { marketTitle } from "../features/card/calls";
+import { useI18n } from "../lib/i18n";
 import { Bar, ErrorBox, Spinner } from "../components/ui";
 
 // the one-or-two letters in a cell: initials of the call, so they travel between languages

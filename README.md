@@ -1,15 +1,26 @@
 # The Pool — thepool.today
 
-A free-to-play **football** prediction game. People call what will happen in a match and stake points on it; a call that lands returns the stake multiplied, a call that misses costs it. Everyone starts with 1,000 points and a million claims a PlayStation 5. This repo is the whole product: database, jobs, email, and the web app.
+A free-to-play **football** prediction game. People call what will happen in a match and stake points on each call; every stake on a call goes into one pot, and at full time the people who were right share it. Everyone starts a season with 100 points and a million claims a PlayStation 5. This repo is the whole product: database, jobs, email, and the web app. How it fits together is in [ARCHITECTURE.md](ARCHITECTURE.md); the migrations are indexed in [MIGRATIONS.md](MIGRATIONS.md).
 
-The board carried seven sports for a while; `0017_football_only.sql` withdrew all of them. Football is the whole game.
+## Quickstart
 
 ```
-supabase/migrations/   schema, game rules, security, read models, notifications, cron
-supabase/functions/    send-notifications (Deno edge function); sync-fixtures · sync-live are the retired football-data.org sync
+git clone https://github.com/Mert112/thepool.git && cd thepool
+git config core.hooksPath .githooks          # lint on commit
+sudo apt install postgresql-17               # any Postgres 17 with a role that can create databases
+(cd web && npm ci)                           # the web app's dependencies (the tests use them too)
+bash tests/run.sh                            # rebuild a local db from every migration, run every test
+cd web && npm run dev                        # http://localhost:5173 against the live project (VITE_SUPABASE_* to change)
+npm test && npm run lint && npm run typecheck
+bash deploy/deploy.sh                        # on the server: build and publish to /var/www/thepool
+```
+
+```
+supabase/migrations/   schema, game rules, security, read models, notifications, cron (MIGRATIONS.md)
+supabase/functions/    send-notifications (email) · phone-verify (SMS code) · _shared helpers
 sync/                  api-football.mjs — fixtures, live details, squads, odds and settlement (runs on the server)
-web/                   React + Vite app (Vercel / Cloudflare Pages / Netlify)
-tests/                 end-to-end rules test that runs on plain Postgres
+web/src/               pages/ · components/ (shared UI) · features/<board|card|crews|economy|ads|profile>/ · lib/ (supabase, i18n, format, auth)
+tests/                 the rules tests on plain Postgres, and the parser and language tests
 ```
 
 ## How it fits together
@@ -60,11 +71,10 @@ supabase secrets set MAIL_FROM="The Pool <hello@thepool.today>"
 
 ### 3. Deploy the functions
 ```
-supabase functions deploy sync-fixtures --no-verify-jwt
-supabase functions deploy sync-live --no-verify-jwt
 supabase functions deploy send-notifications --no-verify-jwt
+supabase functions deploy phone-verify
 ```
-They reject any call that is not carrying the service-role key, so `--no-verify-jwt` is safe. Run `sync-fixtures` once by hand from the dashboard to fill the board; squads arrive over the following day (2 teams per run, twice an hour, free-tier pacing).
+`send-notifications` rejects any call not carrying the service-role key, so `--no-verify-jwt` is safe; `phone-verify` takes the player's own token. Fixtures come from `sync/api-football.mjs` on the server (below), not from a function.
 
 ### 4. Resend
 Add the domain `thepool.today` in Resend and create the DNS records it gives you (DKIM + SPF, and a DMARC TXT) in GoDaddy. Sending from an unverified domain lands in spam.
@@ -101,8 +111,10 @@ The red card takes an optional 15-minute window, which narrows the call — fewe
 
 ## Points are a currency, and the pot is all there is to win
 
-Everyone starts a season with **100 points**. Every call carries a stake the player picks — **1, 2,
-5, 10, 25 or 50** — and the stake leaves the balance when the card **locks at kick-off**, not when it
+Everyone starts a season with **100 points**. Every call carries a stake the player picks — **any
+whole number of points**, up to what is free (balance less other open cards) and up to **half of
+what the others already have in that call's pot, plus 10** (0027), so nobody can swamp a pot late.
+1, 5, 10, 25 and 50 are quick buttons; a stake already saved is never pushed out by the cap. The stake leaves the balance when the card **locks at kick-off**, not when it
 is saved. Every stake on a call type goes into **one pot for that card**.
 
 At full time, per pot:
@@ -139,7 +151,7 @@ disagree with the balance it moved.
 The conservation law — `balances + house + jackpots + stakes still riding = everything ever
 credited` — is asserted after every scenario in `tests/economy_test.sql` and `tests/jackpot_test.sql`.
 
-**Getting points.** A "Get points" button plays a 30-second rewarded-video placeholder worth **0.5
+**Getting points.** A "Get points" button plays a 25-second rewarded-video placeholder worth **0.2
 points**, up to **ten a day**. The cap is structural: `ad_views` is keyed on `(user_id, day, seq)`
 with `check (seq between 1 and 10)`. `app_flags.rewarded_ads` switches it off.
 
@@ -263,10 +275,27 @@ Two kinds, both behind consent.
 
 **Rewarded** — Google Ad Manager's rewarded slot, through the Publisher Tag. GPT's
 `rewardedSlotGranted` event carries no token, so the nonce is ours: `rpc_ad_nonce()` mints a
-single-use one after checking the flag, the daily cap and the sixty-second spacing, the page
+single-use one after checking the flag and the daily cap, the page
 plays the ad, and `rpc_watch_ad(nonce)` credits 0.2 points once. A replayed or borrowed nonce
 credits nothing. No fill, no consent or no tag means **"No ad available right now"** and no
-credit.
+credit. There is no wait between ads (0026): the next can start the moment one finishes.
+
+**Fraud scoring** (0026) replaced the sixty-second spacing. Every credit stores the device
+fingerprint the page sends and the IP and user-agent from the gateway's headers.
+`ad_fraud_scores()` flags an account that shares a fingerprint or an IP with 3+ other accounts,
+or whose credits average under 20 seconds apart on a day (thresholds in `config.ad_fraud`).
+Flagged accounts still play and earn; their prize claims carry a warning in
+`pool.admin_prize_claims`, and `pool.admin_ad_fraud` lists every scored account. Both are
+readable only from the dashboard / service role.
+
+**Phone before the first claim** (0026). With `app_flags.phone_verification` on, `rpc_claim_prize()`
+refuses until the account has a row in `phone_verifications` (one number per account, one
+account per number). The `phone-verify` edge function sends and checks an SMS code through
+Twilio Verify. To switch it on:
+```
+supabase secrets set TWILIO_ACCOUNT_SID=… TWILIO_AUTH_TOKEN=… TWILIO_VERIFY_SERVICE_SID=…
+update pool.app_flags set enabled = true where key = 'phone_verification';
+```
 
 To go live, fill in the ad unit and switch the flag:
 ```sql
@@ -274,7 +303,7 @@ update pool.config set value = value || jsonb_build_object(
   'network_code', '<code>', 'ad_unit_path', '/<code>/<unit>') where key = 'ads';
 update pool.app_flags set enabled = true where key = 'gam_rewarded';
 ```
-Until then the thirty-second stub plays, which is also how to test. With the real slot on, the
+Until then the twenty-five-second stub plays, which is also how to test. With the real slot on, the
 stub refuses to pay.
 
 **AdSense** — the tag is in `web/index.html` as Google issued it, neutralised with
@@ -294,7 +323,8 @@ bash tests/run.sh      # rebuilds the db from every migration, then runs the tes
 `tests/game_test.sql` walks a full card: crew creation, RLS, filling, lock at kickoff, progressive live settlement at 1–1, a 90+3 goal and 90+5 red that count, an extra-time goal that does not, stickers, receipts, streaks, a provider correction, leaderboards and deadline reminders.
 `tests/football_test.sql` covers the rest of the card: the 3-way result, the goals line, the handicap, pushes, the red card's time window, non-runners and withdrawn cards.
 `tests/jackpot_test.sql` covers the rollover: the rake, the compounding, a void never feeding the pot, one competition's jackpot staying out of another's, a single winner taking it all, several winners splitting it by stake with the remainder carried, and settling twice moving nothing.
-`tests/ads_test.sql` covers the rewarded ad: the nonce rules (replayed, borrowed, invented, expired, in-flight past the cap), the sixty-second spacing, ten a day, the flag, and that the stub cannot pay while the real slot is live.
+`tests/ads_test.sql` covers the rewarded ad: the nonce rules (replayed, borrowed, invented, expired, in-flight past the cap), back-to-back ads with no wait, ten a day, the flag, that the stub cannot pay while the real slot is live, what each credit records, the three fraud flags and the admin warning, and the phone gate (once, one number per account, codes rationed).
+`tests/follows_test.mjs` covers "My leagues" in the browser: a follow or unfollow shows in the one shared list before the server answers, the server agrees, a refused follow is rolled back, and signing out forgets the list.
 `tests/provider_test.sql` covers the provider: the request budget and what happens when it runs out, the league catalogue, following and unfollowing, which fixtures are worth a request, odds asked for once rather than once a minute, and the void-on-no-coverage rule.
 `tests/provider_test.mjs` runs the parsers against responses API-Football actually sent (`tests/fixtures/api-football.json`): the 90-minute rule, extra time, every status code, events, line-ups, odds and the name matching.
 `tests/i18n_test.sql` covers the language: the null default, the three-way check, `rpc_set_language()` setting only your own, the pieces a call travels as, that no English prose leaks into them, and the grants.

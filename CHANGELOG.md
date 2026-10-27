@@ -1,5 +1,189 @@
 # Changelog
 
+## 2026-10-27 — a refactor for reading: features, one query helper, strict types, CI
+
+No behaviour change and no schema change. Deployed; production's twelve fingerprints are
+identical before and after.
+
+### Lines of code
+
+| | before | after |
+|---|---:|---:|
+| `web/src` app code | 5,400 | 5,286 |
+| `web/src` component tests + their helper | — | 184 |
+| `supabase/functions` | 832 | 516 |
+| `sync` | 569 | 569 |
+| `tests` | 2,638 | 2,545 |
+| **all code and tests** | **9,439** | **9,100** |
+| lint, CI and hook config (new) | — | 55 |
+
+The data layer alone went from 395 lines to 234. `web/src` as a whole is 70 lines up only because
+the follow test moved there from `tests/` and two component tests were added.
+
+### What moved, and why
+
+- **`web/src` is `pages/`, `components/` (shared UI only), `features/<board|card|crews|economy|ads|profile>/`
+  and `lib/` (supabase, i18n, format, auth).** Each feature folder holds its `api.ts` and the
+  components and tests that belong to it, and nothing else — no empty `hooks/` folders, because
+  none of the features has a hook of its own yet.
+- **`lib/api.ts` (395 lines) became six `features/*/api.ts` files.** Every query now goes through
+  `must()` in `lib/supabase.ts`, which returns the data or throws the database's message — the
+  same thing the old `const { data, error } = …; if (error) fail(error); return data as …` did in
+  four lines, fifty times over. Each feature's API file is the one place that names its tables and
+  functions, so a screen leads to its query in two hops.
+- **Dialogs live with their feature:** `AdModal` (out of `components/ui.tsx`), `CreateCardDialog`
+  (out of `pages/Board.tsx`), `PhoneDialog` (out of `pages/Profile.tsx`), `LeaguesDialog`.
+- **The stake rule is written once** (`stakeLimit` in `features/economy/api.ts`) and the stake
+  field uses it, instead of computing the cap inline.
+- **`features/ads/Consent.tsx` is `ConsentBar.tsx`**, because `Consent.tsx` and `consent.ts` in the
+  same folder collide on case-insensitive filesystems (Windows, macOS).
+- **Dead code:** the retired football-data.org edge functions `sync-fixtures` and `sync-live` and
+  their `_shared/fd.ts` (317 lines) are deleted from the repo. They are still deployed in Supabase,
+  uncalled, as they have been since `0024`; delete them in the dashboard when convenient. A scan
+  for exports nothing imports found none, and the one near-duplicate helper (`pickText` in
+  `LiveCard`) differs on purpose (its empty-state text), so it stays.
+
+### Strict TypeScript, ESLint, Prettier, the hook
+
+- `tsconfig.json` is `strict` with `noUnusedLocals` / `noUnusedParameters`; it cost one unused import.
+- ESLint (`npm run lint`): recommended JS + TypeScript rules and the React hooks rules. One warning
+  remains, a deliberate dependency list in `LiveCard`.
+- **Prettier is configured (`npm run format -- <files>`) but not enforced.** Formatting the code
+  base grows `web/src` from 5,286 lines to 9,014 at 140 columns — and still to 8,183 at 240 —
+  because the house style writes one JSX element per line. That contradicts "lines go down", so
+  the pre-commit hook lints and does not format. To enforce Prettier: `cd web && npx prettier --write .`
+  once, and add `npx prettier --check $changed` to `.githooks/pre-commit`.
+- `.githooks/pre-commit` runs ESLint on staged web files. One-time setup per clone:
+  `git config core.hooksPath .githooks` (done on the server).
+
+### Tests
+
+- **`npm test`** (in `web/`) runs `node --test src/` — Node's own runner, no new framework.
+  `lib/testkit.mjs` bundles the app's real modules with esbuild (already there through Vite),
+  swaps the database for fakes, and renders with `react-dom/server`. Three files, 14 tests:
+  follow/unfollow and the "My leagues" dialog rendering the shared list as it changes; the stake
+  limit and its translated refusals; the 25-second stub ad.
+- `tests/run.sh` now runs them too, after the SQL and `.mjs` suites. All pass.
+- **`.github/workflows/test.yml`** runs `tests/run.sh` against a Postgres 17 service, then the type
+  check and lint, on every push and pull request. It has not run on GitHub yet: nothing was pushed.
+
+### Backend
+
+`supabase/functions/` is one entry per job — `send-notifications` (email, from the sync host) and
+`phone-verify` (SMS code, from the browser) — with `_shared/db.ts` and `_shared/i18n.ts`. The sync
+job is `sync/api-football.mjs`. No generated database types were added for the functions: they make
+four calls between them, and the generated file would be larger than both functions together.
+The edge functions were not redeployed; only a comment in `_shared/db.ts` changed.
+
+### Docs
+
+`ARCHITECTURE.md` (the diagram, the invariants, where each concern lives, provider → settlement →
+ledger), `MIGRATIONS.md` (the index; migrations stay immutable), and a Quickstart at the top of the
+README, whose opening paragraph still described the fixed multipliers and 1,000-point start of
+`0019` and now describes the pot.
+
+---
+
+## 2026-10-27 — fraud scoring instead of a wait, free stakes, a phone before the prize, and one "My leagues"
+
+Migrations `0026_ad_fraud_scoring.sql` and `0027_free_stakes.sql`, a new edge function
+`phone-verify`, and the web app. All deployed.
+
+### Ads: no wait between them, a score instead
+
+**The sixty-second spacing is gone.** It made every honest player wait and stopped nobody with
+ten accounts. (An earlier request in the same batch asked to cut it to 25 seconds; the later one
+removed it entirely, so that is what shipped. The 25-second stub and the unchanged nonce rules and
+daily cap were kept from the first.)
+
+- **The stub ad is 25 seconds** (`AD_SECONDS`, and `config.ads.stub_seconds`), and "Another" starts
+  the next one straight away.
+- **Every credit records** the device fingerprint the page sends (a SHA-256 of stable browser
+  traits — never stored in the browser), and the IP (`cf-connecting-ip`, else `x-real-ip`, else
+  the first `x-forwarded-for`) and user-agent from PostgREST's request headers. The page cannot
+  set the last two. A malformed fingerprint is dropped, not refused.
+- **`ad_fraud_scores()`** flags an account that shares a fingerprint *or* an IP with **3 or more
+  other accounts**, or whose credits **average under 20 seconds apart** within a day. Thresholds
+  live in a non-public `config.ad_fraud` row.
+- **Flagged accounts still play and earn.** Their prize claims show `⚠ <reasons>` in the new
+  **`pool.admin_prize_claims`** view; `pool.admin_ad_fraud` lists every scored account. There was
+  no admin view before (claims were handled by hand in the dashboard), so these are database
+  views, readable only by the dashboard and the service role.
+- The nonce rules and the ten-a-day cap are unchanged. `rpc_watch_ad` now takes
+  `(p_nonce, p_fingerprint)`; both are optional, so the old page kept working during the deploy.
+
+### A phone, once, before the first claim
+
+`rpc_claim_prize()` refuses with *"Verify your phone number before your first claim."* until the
+account has a row in `phone_verifications` — **one number per account, one account per number**
+(primary key on the account, unique on the number). The `phone-verify` edge function sends and
+checks the code through **Twilio Verify**; the database decides who may be sent one (at most five
+a day per account, three per number) and records the result. Profile opens the dialog when the
+claim button is pressed, then files the claim.
+
+**It is behind `app_flags.phone_verification`, which is off.** I could not confirm the Twilio
+secrets are set, and turning the flag on without them would block every claim. To switch on:
+set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_VERIFY_SERVICE_SID` as edge-function
+secrets, then `update pool.app_flags set enabled = true where key = 'phone_verification';`.
+
+The privacy page (three languages) now says what the fraud checks record and why, and names Twilio.
+
+### Free stakes, with a cap so nobody swamps a pot
+
+- **Any whole number from 1** up to the playable balance (balance less other open cards). The
+  quick buttons are **1, 5, 10, 25, 50**; `2` left the `stakes` table, which is now only the
+  shortcut list, and the foreign key from `calls.stake` was replaced by `check (stake >= 1)`. No
+  call in production had ever used 2.
+- **The cap: half of what the other players have in that call's pot, plus 10.** An empty pot takes
+  10 at most; after someone stakes 10 the next player can put in 15. Keeping or lowering a stake
+  you already saved is always allowed, so a shrinking pot cannot lock you out of your own card.
+- **Checked on the server** in `rpc_save_calls`: non-numbers, fractions, zero, more than is free
+  and over the cap each have their own message, translated in all three languages. The page
+  shows the same limit — quick buttons above it are disabled, and the field says "max N here"
+  when the cap is below the balance — so the server refusal is rarely seen.
+- **Existing tests changed numbers**, because the old scenarios broke the new cap (Ben's 25 after
+  Ana's 10). The economy test now plays Ben at 15, and the pot, purse, prices, rake and balances
+  were recalculated by hand; Dee's drained-balance case was rewritten for the per-call limit.
+
+### The board's league filter
+
+**What was wrong:** which leagues you follow was fetched three times — by the board, by Settings
+and by the "More leagues" dialog — and each copy refreshed on its own trigger (the board and
+Settings only when the dialog closed). Settings also showed the follows twice, once as
+"Competitions" and once as "Watched competitions" — in Turkish *Takip ettiklerin* and *Takip
+edilen turnuvalar*, both reading as "the ones you follow" — and clicking the second list
+toggled the new-card mail rather than following anything, while the board's chips came from a
+fourth source, the global `active` competitions.
+
+**Fixed:** `web/src/lib/follows.ts` holds the one copy. Following or unfollowing updates it at
+once (before the server answers), then tells the server; a refusal rolls it back. The board's
+chips, the dialog and Settings all read it. Settings has one **"My leagues"** list (*Liglerim*,
+*Моите лиги*), each league with a bell for the new-card mail. A selected board chip whose league
+is unfollowed falls back to "All" instead of an empty board.
+
+The bug report folder `/root/bug-league/` did not exist and nothing was pasted, so this was
+diagnosed from the code rather than the console errors and screenshots.
+
+### Tests
+
+`bash tests/run.sh`: all suites pass. New: `tests/follows_test.mjs` (follow/unfollow through the
+shared list, with a fake server). `tests/ads_test.sql` gained back-to-back ads, what each credit
+records, the three flags, the admin warning and the phone gate; `economy`, `game` and `jackpot`
+were updated for free stakes and the cap.
+
+### Verified in production
+
+- Before: no call ever staked 2, no prize claims, 6 ad credits — so nothing in the data was hit.
+- Every new table, view and function checked for `anon`/`authenticated` access: only
+  `rpc_ad_nonce` and `rpc_watch_ad` are callable by players; the rest are closed.
+- **Twelve of twelve fingerprints match** the local build, with `call_edge_function` left out of
+  the three function hashes — it comes from `0006_cron.sql`, which the local build skips.
+- `phone-verify` answers 401 without a sign-in. The new web bundle is live on thepool.today.
+- **Not yet seen:** a real ad credit carrying an IP. The gateway header names are the documented
+  ones, but the first new row in `ad_views` is the proof — check its `ip` column.
+
+---
+
 ## 2026-10-26 — the scheduler, and a backlog retired
 
 `0006_cron.sql` applied at last, three jobs of its six. The 51 notifications that had been

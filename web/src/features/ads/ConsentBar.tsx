@@ -5,8 +5,8 @@
 // card that is about to lock.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { consent, loadAdScripts, setConsent } from "../lib/consent";
-import { useI18n } from "../i18n";
+import { consent, loadAdScripts, setConsent } from "./consent";
+import { useI18n } from "../../lib/i18n";
 
 export function ConsentBar() {
   const { t } = useI18n();

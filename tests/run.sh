@@ -21,3 +21,7 @@ for t in tests/*_test.mjs; do
   node --test "$t" > /dev/null || { echo "FAILED: $t"; exit 1; }
   echo " $(basename "$t" _test.mjs | tr 'a-z' 'A-Z') TESTS PASSED"
 done
+# the component tests: the app's own modules, bundled with fakes for the database (npm test)
+echo "--- web/src/**/*.test.mjs"
+(cd web && npm test --silent > /dev/null) || { echo "FAILED: web component tests (cd web && npm test)"; exit 1; }
+echo " COMPONENT TESTS PASSED"

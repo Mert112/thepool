@@ -82,7 +82,9 @@ export function translateError(msg: string | null | undefined, d: Dict): string 
   const exact = d.errors[raw];
   if (exact) return exact;
   let m: RegExpMatchArray | null;
-  if ((m = raw.match(/^a stake is (.+) points — not (.+)$/))) return d.errorPatterns.stake(m[1], m[2]);
+  if ((m = raw.match(/^A stake is a whole number of points — not (.+)$/))) return d.errorPatterns.wholeStake(m[1]);
+  if ((m = raw.match(/^You can stake at most (.+) on one call/))) return d.errorPatterns.stakeFree(m[1]);
+  if ((m = raw.match(/^The most you can stake on this call right now is (.+) — half the pot plus 10\.$/))) return d.errorPatterns.stakeCap(m[1]);
   if ((m = raw.match(/^Not enough points: you hold (.+), this card stakes (.+), and (.+) is already promised to other open cards\./)))
     return d.errorPatterns.notEnough(m[1], m[2], m[3]);
   if ((m = raw.match(/^A PlayStation 5 takes 1,000,000 points\. You hold (.+)\.$/))) return d.errorPatterns.prizeShort(m[1]);

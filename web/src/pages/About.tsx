@@ -1,5 +1,5 @@
 // §ads /about — what the game is, in the language you are reading it in.
-import { useI18n } from "../i18n";
+import { useI18n } from "../lib/i18n";
 
 export default function About() {
   const { t } = useI18n();

@@ -1,13 +1,16 @@
 // §5.3 The match page: everything about a card before you play it
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { getCardPlayers, getCardsForMatch, getCrowd, getJackpots, getMarkets, getMatch, getMyCrews, getMyEntry, type Card } from "../lib/api";
+import { getCardPlayers, getCardsForMatch, getCrowd, getMarkets, getMyEntry, type Card } from "../features/card/api";
+import { getJackpots } from "../features/economy/api";
+import { getMatch } from "../features/board/api";
+import { getMyCrews } from "../features/crews/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { soon } from "../lib/format";
-import { useI18n } from "../i18n";
+import { useI18n } from "../lib/i18n";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
-import { CreateCardDialog } from "./Board";
-import { labelOf, marketExplainer, marketTitle, offered } from "../lib/calls";
+import { CreateCardDialog } from "../features/card/CreateCardDialog";
+import { labelOf, marketExplainer, marketTitle, offered } from "../features/card/calls";
 
 export default function Match() {
   const { id } = useParams();

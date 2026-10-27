@@ -1,7 +1,7 @@
 // §ads /privacy — what is held, why, and how to turn the advertising off.
 import { useState } from "react";
-import { consent, setConsent } from "../lib/consent";
-import { useI18n } from "../i18n";
+import { consent, setConsent } from "../features/ads/consent";
+import { useI18n } from "../lib/i18n";
 
 export default function Privacy() {
   const { t } = useI18n();

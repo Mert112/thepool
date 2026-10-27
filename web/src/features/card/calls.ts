@@ -5,8 +5,9 @@
 // says them in the language the app is speaking. The database sends the same pieces for calls
 // other people made (pool.call_parts, 0023), so a crowd split and a history row read the same
 // as the card they came from. Team and player names are the provider's and pass through as given.
-import type { BoardRow, Call, CallType, Market, Player } from "./api";
-import type { Dict } from "../i18n/en";
+import type { BoardRow } from "../board/api";
+import type { Call, CallType, Market, Player } from "./api";
+import type { Dict } from "../../lib/i18n/en";
 
 export const teamName = (m: BoardRow, t: number | null | undefined) => (t === m.home_team_id ? m.home_team : t === m.away_team_id ? m.away_team : "");
 

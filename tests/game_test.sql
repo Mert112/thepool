@@ -138,7 +138,7 @@ begin
   begin
     perform rpc_save_calls(pub, '[{"call_type":"winner","team_id":57,"stake":50}]');
     raise exception 'a card was staked past the balance';
-  exception when others then if sqlerrm not like '%Not enough points%' then raise; end if; end;
+  exception when others then if sqlerrm not like '%at most 2 on one call%' then raise; end if; end;
   perform test_reset();
   perform apply_ledger('33333333-3333-3333-3333-333333333333', 'adjustment', 'test-drain', 0);
   assert (select balance from profiles where id = '33333333-3333-3333-3333-333333333333') = 100, 'and she is restored';

@@ -5,7 +5,7 @@
 // speaks, otherwise English — and a choice already saved on the profile beats all of it.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pickLanguage, startingLanguage, isLang, LANGS, FALLBACK } from "../web/src/i18n/detect.js";
+import { pickLanguage, startingLanguage, isLang, LANGS, FALLBACK } from "../web/src/lib/i18n/detect.js";
 
 test("the three languages, and English as the fallback", () => {
   assert.deepEqual(LANGS, ["en", "tr", "bg"]);

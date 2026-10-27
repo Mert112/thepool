@@ -1,11 +1,14 @@
 // §5.6 The crew room: cards open this week, season table, crew-v-crew, invite code, feed
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { challengeCrew, crewScore, getMatches, getCrew, getCrewCards, getCrewInviteCode, getCrewMembers, getCrewPosts, getMarkets, leaderboard, post } from "../lib/api";
+import { challengeCrew, crewScore, getCrew, getCrewCards, getCrewInviteCode, getCrewMembers, getCrewPosts, post } from "../features/crews/api";
+import { getMatches } from "../features/board/api";
+import { getMarkets } from "../features/card/api";
+import { leaderboard } from "../features/economy/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
-import { useI18n } from "../i18n";
+import { useI18n } from "../lib/i18n";
 import { Avatar, Empty, ErrorBox, Spinner } from "../components/ui";
-import { marketShort } from "../lib/calls";
+import { marketShort } from "../features/card/calls";
 
 export default function CrewRoom() {
   const { id } = useParams();
