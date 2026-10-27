@@ -15,7 +15,7 @@ says what it does and why; this is the index.
 | `0006_cron` | pg_cron jobs: lock cards, deadline reminders, weekly digest (three of six live) | |
 | `0007_function_search_path` | Pinned `search_path` on helper functions | |
 | `0008`–`0016` | Multi-sport and sportsbook markets, squads, the red-card window | withdrawn by `0017` |
-| `0017_football_only` | Football is the whole game; `v_board` as it stands | |
+| `0017_football_only` | Football is the whole game | `v_board`: `0029` |
 | `0018_explainers_and_history` | What each call means; prediction history | |
 | `0019_point_economy` | Points as a currency: the append-only `ledger`, stakes, ads, prize claims | payouts: `0021` |
 | `0020_jackpot_rollover` | A pot nobody lands rolls into the competition's jackpot | |
@@ -27,3 +27,4 @@ says what it does and why; this is the index.
 | `0026_ad_fraud_scoring` | Fraud scoring instead of ad spacing; admin views; phone before the first claim | |
 | `0027_free_stakes` | Any whole-number stake, capped at half the pot plus 10 | cap: `0028` |
 | `0028_stake_what_you_hold` | No pot cap: stake any whole number you have free; the handicap switched off | |
+| `0029_card_opens_with_bets` | A card is listed, and mailed about, once its first bet is saved | `v_board`: `0029` |

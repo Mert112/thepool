@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-10-27 — a card opens when the first bet is in
+
+Migration `0029_card_opens_with_bets.sql` and the web app. Live.
+
+Pressing "Open it" used to put the card on the board, in the match page, in the crew room and in
+everyone's "a new card opens" mail straight away — before its creator had made a single call. In
+production four open cards had no bets at all and were showing as open.
+
+- `cards.opened_at` is stamped by the **first call saved** on the card (a trigger on `calls`, so a
+  save that withdraws everything does not count, and a refused save rolls it back).
+- Until then the card is listed for **its creator only**: `v_board` and `match_card_count` count
+  opened cards, and the match page and crew room ask for cards that are opened or created by you.
+- The **new-card mail** goes out when the card opens, not when the row is created.
+- `rpc_open_card()` still hands back the same card to anyone who asks for one on that match, so a
+  second player pressing "Open it" bets on the same card rather than making a duplicate — and if
+  they bet first, that is what opens it.
+- Existing cards with players were marked open as of their creation (14); the four empty open cards
+  are now hidden until someone bets on them.
+
+`game_test.sql` gained the rule end to end (hidden, not counted, not mailed, not opened by an empty
+save, one card per match, opened and listed by the first bet). Its mail count went from 1 to 3: the
+two earlier crew cards were created before Tobias joined the crew but opened after, so he now hears
+about them — which is the point. All suites pass; production's fingerprints match.
+
+---
+
 ## 2026-10-27 — stake what you hold, no handicap, the leagues bar, and cards others can see
 
 Migration `0028_stake_what_you_hold.sql`, the sync script and the web app. All live.

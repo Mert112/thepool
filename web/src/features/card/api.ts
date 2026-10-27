@@ -8,7 +8,7 @@ export type CallType = "winner" | "draw" | "motm" | "score" | "scorer" | "assist
 export type Market = { options: string[] | null; call_type: CallType; title: string; short: string;
   description: string; explainer: string; simple: boolean; enabled: boolean; sort_order: number;
   settles_on: "event" | "result" };
-export type Card = { id: string; match_id: number; mode: "simple" | "complex"; crew_id: string | null; created_by: string | null; status: "open" | "locked" | "live" | "settled" | "disputed"; crews?: { name: string } | null };
+export type Card = { id: string; match_id: number; mode: "simple" | "complex"; crew_id: string | null; created_by: string | null; opened_at: string | null; status: "open" | "locked" | "live" | "settled" | "disputed"; crews?: { name: string } | null };
 export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; stake?: number; staked?: boolean; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
 export type Entry = { id: string; card_id: string; user_id: string; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null; icon?: string } };
 export type Player = { id: number; team_id: number | null; name: string; position: string | null };
@@ -20,7 +20,11 @@ export type CardPlayer = { user_id: string; display_name: string | null; n_calls
 
 export const getMarkets = () => must<Market[]>(supabase.from("markets").select("*").eq("enabled", true).order("sort_order"));
 export const getCard = (id: string) => must<Card | null>(supabase.from("cards").select("*, crews(name)").eq("id", id).maybeSingle());
-export const getCardsForMatch = (matchId: number) => must<Card[]>(supabase.from("cards").select("*, crews(name)").eq("match_id", matchId));
+// §0029 a card is listed once its first bet is in — or to its creator, who has yet to make one
+export const listedCards = async () =>
+  `opened_at.not.is.null,created_by.eq.${(await supabase.auth.getSession()).data.session?.user.id ?? "00000000-0000-0000-0000-000000000000"}`;
+export const getCardsForMatch = async (matchId: number) =>
+  must<Card[]>(supabase.from("cards").select("*, crews(name)").eq("match_id", matchId).or(await listedCards()));
 export const getEntries = (cardId: string) =>
   must<Entry[]>(supabase.from("entries").select("*, calls(*), profiles:user_id(display_name, icon)").eq("card_id", cardId).order("points", { ascending: false }));
 export const getMyEntry = (cardId: string, userId: string) =>

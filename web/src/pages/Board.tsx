@@ -64,7 +64,7 @@ export default function Board() {
     if (r.phase === "upcoming") {
       if (r.card_count > 0 || mine(r.match_id)) return nav(`/match/${r.match_id}`);
       // the board may be up to 30 seconds old: if somebody opened a card meanwhile, join it
-      if ((await getCardsForMatch(r.match_id)).length > 0) { reload(); return nav(`/match/${r.match_id}`); }
+      if ((await getCardsForMatch(r.match_id)).some((c) => c.opened_at)) { reload(); return nav(`/match/${r.match_id}`); }
       return setCreating(r);
     }
     else if (r.public_card_id) nav(`/card/${r.public_card_id}/live`);

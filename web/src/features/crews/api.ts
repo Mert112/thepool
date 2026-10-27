@@ -1,7 +1,7 @@
 // §crews Crews, their members, cards and feed. Only these columns are readable; the invite code
 // comes from crew_invite_code(), so it is never in a row anyone can list.
 import { must, supabase } from "../../lib/supabase";
-import { getCardPlayers, type Card, type CallType, type CardPlayer } from "../card/api";
+import { getCardPlayers, listedCards, type Card, type CallType, type CardPlayer } from "../card/api";
 
 export type Crew = { id: string; name: string; description: string | null; mode: "simple" | "complex"; owner_id: string; rival_crew_id: string | null; created_at: string };
 const CREW_COLS = "id, name, description, mode, owner_id, rival_crew_id, created_at";
@@ -17,7 +17,7 @@ export const getCrewInviteCode = (id: string) => must<string | null>(supabase.rp
 export const getCrewMembers = (id: string) => must<Array<{ user_id: string; role: string; joined_at: string; profiles: Who }>>(
   supabase.from("crew_members").select("user_id, role, joined_at, profiles:user_id(display_name, icon)").eq("crew_id", id), []);
 export async function getCrewCards(crewId: string): Promise<Array<Card & { players: CardPlayer[] }>> {
-  const cards = await must<Card[]>(supabase.from("cards").select("*").eq("crew_id", crewId).in("status", ["open", "locked", "live"]), []);
+  const cards = await must<Card[]>(supabase.from("cards").select("*").eq("crew_id", crewId).in("status", ["open", "locked", "live"]).or(await listedCards()), []);
   const players = await Promise.all(cards.map((c) => getCardPlayers(c.id)));
   return cards.map((c, i) => ({ ...c, players: players[i] }));
 }

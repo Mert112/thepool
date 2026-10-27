@@ -321,6 +321,40 @@ do $$ begin
   perform test_reset();
 end $$;
 
+-- --- a card is open to others only once its first bet is in (0029) -------------------
+insert into matches (id, competition_code, season, utc_date, status, home_team_id, away_team_id)
+  values (1094, 'PL', '2026', now() + interval '3 hours', 'TIMED', 57, 64);
+select test_as('11111111-1111-1111-1111-111111111111');
+select rpc_open_card(1094, 'complex', null) as card4 \gset
+select test_reset();
+do $$ declare c uuid := (select id from cards where match_id = 1094); n int; begin
+  assert (select opened_at from cards where id = c) is null, 'created, not open';
+  assert (select public_card_id from v_board where match_id = 1094) is null, 'not on the board';
+  assert match_card_count(1094) = 0, 'and not counted';
+  select count(*) into n from notifications where dedupe_key = c::text;
+  assert n = 0, 'nobody mailed about an empty card';
+  -- a save with no calls does not open it
+  perform test_as('11111111-1111-1111-1111-111111111111');
+  perform rpc_save_calls(c, '[]');
+  perform test_reset();
+  assert (select opened_at from cards where id = c) is null, 'an empty save does not open it';
+  -- somebody else asking for a card on this match gets the same one, not a second
+  perform test_as('22222222-2222-2222-2222-222222222222');
+  assert rpc_open_card(1094, 'simple', null) = c, 'one public card per match';
+  perform test_reset();
+  -- the first bet opens it, and only then is it listed
+  perform test_as('11111111-1111-1111-1111-111111111111');
+  perform rpc_save_calls(c, '[{"call_type":"winner","team_id":57,"stake":1}]');
+  perform test_reset();
+  assert (select opened_at from cards where id = c) is not null, 'the first bet opens it';
+  assert (select public_card_id from v_board where match_id = 1094) = c, 'and puts it on the board';
+  assert match_card_count(1094) = 1, 'counted';
+  -- tidy: this card is not part of the reminder count below
+  delete from notifications where dedupe_key = c::text;
+  delete from calls where entry_id in (select id from entries where card_id = c);
+  delete from entries where card_id = c;
+end $$;
+
 -- --- deadline reminders -------------------------------------------------------------
 insert into matches (id, competition_code, season, utc_date, status, home_team_id, away_team_id)
   values (1002, 'PL', '2026', now() + interval '55 minutes', 'TIMED', 57, 64);
@@ -330,7 +364,11 @@ insert into t_ids values ('card3', :'card3');
 select rpc_save_calls(:'card3', '[{"call_type":"winner","team_id":57,"stake":2}]');
 select test_reset();
 do $$ begin
-  assert (select count(*) from notifications where type = 'new_card') = 1, 'new-card mail to Tobias only';
+  -- the mail goes out when a card opens with its first bet (0029), not when it is created: the two
+  -- earlier crew cards were created before Tobias joined, but opened after, so he hears of all three
+  assert (select count(*) from notifications where type = 'new_card') = 3, 'a new-card mail per crew card';
+  assert (select count(*) from notifications where type = 'new_card' and user_id <> '22222222-2222-2222-2222-222222222222') = 0,
+    'all of them to Tobias, none to Mina who opened them';
   assert enqueue_deadline_reminders() = 2, 'reminders: Mina (incomplete) + Tobias (absent)';
   assert enqueue_deadline_reminders() = 0, 'reminders deduped';
 end $$;
