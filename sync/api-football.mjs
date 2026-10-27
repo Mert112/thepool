@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // The Pool — API-Football sync (api-sports.io v3). systemd runs it every minute.
+// (0030: squads and pre-match line-ups now run every pass — see squads() and lineups().)
 //
 //   · once a week   the league catalogue, so "More leagues" knows what exists
-//   · once a day    fixtures for every followed competition, and squads for the teams playing
-//                   (a league followed since then: on the next pass)
+//   · once a day    fixtures for every followed competition (a league followed since: next pass)
+//   · every minute  squads for the teams due one (soonest kick-off first, each once a day), and the
+//                   line-ups of fixtures in the next ninety minutes, as soon as they are posted
 //   · every minute  the fixtures that are in play *and* have a card on them, in batches of
 //                   twenty, with their events and line-ups — then settlement
 //   · after the whistle  one results check for everything else that kicked off
@@ -470,8 +472,9 @@ async function squads(base, cfg) {
   for (const t of teams) {
     if (!(await afford(1, "squads"))) break;
     const rows = await get(base, "players/squads", { team: t.af_id });
-    if (!rows?.length) continue;
     if (DRY) { n++; continue; }
+    // an empty answer is still an answer: mark it, or the same team is asked for every minute
+    if (!rows?.length) { must(await db.from("teams").update({ roster_checked_at: now() }).eq("id", t.team_id), "roster checked"); continue; }
     const players = (rows[0].players ?? []).filter((p) => p.id).map((p) => ({
       af_id: p.id, name: p.name, position: p.position ?? null, shirt: num(p.number),
       team_id: t.team_id, sport: "soccer", updated_at: now(),
@@ -481,6 +484,37 @@ async function squads(base, cfg) {
     n++;
   }
   return n;
+}
+
+// §0030 Line-ups before kick-off: the provider posts them about an hour ahead. Every fixture in the
+// next ninety minutes is asked for (twenty to a request) at most every five minutes until its
+// line-ups arrive, and those players join the squads so they can be picked. Nothing settlement
+// reads is written here — player_stats still comes from the in-play and full-time passes.
+async function lineups(base, cfg, state) {
+  const soon = must(await db.rpc("sync_prematch_fixtures"), "sync_prematch_fixtures");
+  const was = state.lineupsAsked ?? {};
+  // only fixtures still ahead are remembered, so the state file never grows
+  const asked = (state.lineupsAsked = Object.fromEntries(soon.filter((f) => was[f.fixture_id]).map((f) => [f.fixture_id, was[f.fixture_id]])));
+  const due = soon.filter((f) => asked[f.fixture_id] !== "got" && (!asked[f.fixture_id] || Date.parse(asked[f.fixture_id]) < Date.now() - 5 * 60000));
+  let got = 0;
+  for (const part of chunks(due, cfg.fixture_batch ?? 20)) {
+    if (!(await afford(1, "lineups"))) break;
+    const rows = (await get(base, "fixtures", { ids: part.map((x) => x.fixture_id).join("-") })) ?? [];
+    for (const x of part) asked[x.fixture_id] = now();
+    if (DRY) continue;
+    for (const f of rows) {
+      const lineup = parseLineups(f);
+      if (!lineup.length) continue;
+      await isolate(`lineups ${f.fixture.id}`, async () => {
+        const teamIds = await upsertTeams([teamRow(f.teams.home), teamRow(f.teams.away)]);
+        await upsertPlayers(lineup.map((p) => ({ af_id: p.af_player_id, name: p.name, position: p.position, shirt: p.shirt,
+          team_id: teamIds.get(p.af_team_id) ?? null, sport: "soccer", updated_at: now() })));
+        asked[f.fixture.id] = "got";
+        got++;
+      });
+    }
+  }
+  return got;
 }
 
 async function odds(base, cfg) {
@@ -538,7 +572,9 @@ async function main() {
   const doCatalogue = argv.has("--catalogue") || due(state.lastCatalogue, cfg.catalogue_every_days ?? 7);
   // (and once when the state predates `fixtureLeagues`, so it learns which leagues have been fetched)
   const doFixtures = argv.has("--fixtures") || due(state.lastFixtures, cfg.fixtures_every_days ?? 1) || !state.fixtureLeagues;
-  const doSquads = argv.has("--squads") || due(state.lastSquads, cfg.squads_every_days ?? 1);
+  // squads every pass now (0030): sync_squads hands over only the teams due, soonest kick-off
+  // first and each at most once a day, so once the board is covered this costs next to nothing
+  const squadBatch = argv.has("--squads") ? cfg.squad_batch ?? 40 : cfg.squad_batch_per_pass ?? 20;
 
   let cat = 0, fx = null, sq = 0, od = 0;
   if (doCatalogue) { cat = await catalogue(base); if (cat) state.lastCatalogue = now(); }
@@ -563,7 +599,9 @@ async function main() {
   const checks = DRY ? [] : must(await db.rpc("sync_result_checks", { p_limit: cfg.result_batch ?? 40 }), "sync_result_checks");
   const checkSeen = await details(base, cfg, checks.filter((c) => !live.some((l) => l.fixture_id === c.fixture_id)), "results");
 
-  if (doSquads) { sq = await squads(base, cfg); if (sq) state.lastSquads = now(); }
+  sq = (await isolate("squads", () => squads(base, { ...cfg, squad_batch: squadBatch }))) ?? 0; if (sq) state.lastSquads = now();
+  // isolated: a line-up failure must never stand between a match and its settlement
+  const lu = DRY ? 0 : (await isolate("lineups", () => lineups(base, cfg, state))) ?? 0;
   od = await odds(base, cfg);
 
   let mailed = 0;
@@ -577,7 +615,7 @@ async function main() {
   for (const p of problems) log("skipped", p);
   const left = DRY ? "-" : must(await db.rpc("api_left"), "api_left");
   log(`${cat ? `catalogue ${cat} · ` : ""}${fx ? `fixtures ${fx.written}/${fx.got} in ${fx.leagues} leagues · ` : ""}`
-    + `live ${liveSeen}/${live.length} · results ${checkSeen} · squads ${sq} · odds ${od} · `
+    + `live ${liveSeen}/${live.length} · results ${checkSeen} · squads ${sq} · line-ups ${lu} · odds ${od} · `
     + `${mailed ? `mailed ${mailed} · ` : ""}`
     + `${spent} requests${refused ? ` · ${refused} refused by the budget` : ""} · ${left} left today · ${Date.now() - t0}ms`);
 }

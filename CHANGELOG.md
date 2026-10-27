@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-10-27 — players to pick before the match, and a pot that counts your bet
+
+Migration `0030_players_before_kickoff.sql`, the sync script and the web app. Live.
+
+### Players before kick-off
+
+**What was wrong:** squads were fetched **forty teams a day**, oldest-checked first. The board
+carries 299 teams; 154 had never been fetched, and four of the five matches in the next three
+hours had no players to pick for a goalscorer, an assist or a card. Line-ups were only asked for
+once a match was in play.
+
+**Fixed:**
+- `sync_squads()` orders teams by their next kick-off, soonest first, and the sync asks for
+  twenty every minute (each team still at most once a day). The backlog clears in about eight
+  minutes; after that it is roughly 300 requests a day against the 7,000 budget. A team the
+  provider has no squad for is marked checked, so it is not asked for every minute.
+- **Line-ups before kick-off:** every fixture in the next ninety minutes is asked for — twenty to
+  a request, at most every five minutes — until its line-ups are posted, and those players join the
+  squads. Nothing settlement reads (`player_stats`) is written by this pass.
+- Both steps are isolated in the script, so a failure there cannot hold up settlement.
+
+Within two minutes of going live the next matches had 16–39 players a side.
+
+### The pot on the card counts the bet on screen
+
+The card page showed "0 in the pot" until a bet was saved: the pot, the price on each option and
+"about N back if it lands" came from saved bets only. They are now worked out live from what the
+others have saved, the pick and amount on screen, and the jackpot — with the server's own formula.
+
+---
+
 ## 2026-10-27 — a card opens when the first bet is in
 
 Migration `0029_card_opens_with_bets.sql` and the web app. Live.

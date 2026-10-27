@@ -267,5 +267,27 @@ do $$ begin
   assert not (select counts from match_events where provider_key = 'b'), '97 does not';
 end $$;
 
+-- --- players before kick-off (0030) -----------------------------------------------------------------
+insert into teams (id, name, af_id) values (7101, 'Soon FC', 91101), (7102, 'Later FC', 91102), (7103, 'Far FC', 91103);
+insert into matches (id, competition_code, season, utc_date, status, home_team_id, away_team_id, af_fixture_id) values
+  (7201, 'TR1', '2026', now() + interval '40 minutes', 'TIMED', 7101, 7102, 9920101),
+  (7202, 'TR1', '2026', now() + interval '6 days',     'TIMED', 7103, 7102, 9920102);
+do $$ declare order_ text; begin
+  -- unchecked teams first, and among them the soonest kick-off first
+  select string_agg(team_id::text, ',' order by ord) into order_
+    from (select team_id, row_number() over () as ord from sync_squads(500)) x where team_id in (7101, 7102, 7103);
+  assert order_ = '7101,7102,7103' or order_ = '7102,7101,7103', format('soonest kick-off first, got %s', order_);
+  -- a team checked today waits for tomorrow; one never checked does not wait at all
+  update teams set roster_checked_at = now() where id = 7101;
+  assert not exists (select 1 from sync_squads(500) where team_id = 7101), 'checked today: not again';
+  update teams set roster_checked_at = now() - interval '2 days' where id = 7101;
+  assert exists (select 1 from sync_squads(500) where team_id = 7101), 'checked two days ago: again';
+  -- line-ups are asked for in the ninety minutes before kick-off, and only then
+  assert exists (select 1 from sync_prematch_fixtures() where fixture_id = 9920101), '40 minutes out: ask for the line-ups';
+  assert not exists (select 1 from sync_prematch_fixtures() where fixture_id = 9920102), 'six days out: not yet';
+  assert has_function_privilege('authenticated', 'pool.sync_prematch_fixtures()', 'execute') = false, 'the sync''s list, not the player''s';
+  assert has_function_privilege('anon', 'pool.sync_squads(integer)', 'execute') = false, 'nor anyone signed out';
+end $$;
+
 select 'PROVIDER TESTS PASSED' as result;
 rollback;

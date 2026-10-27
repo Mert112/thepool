@@ -27,4 +27,5 @@ says what it does and why; this is the index.
 | `0026_ad_fraud_scoring` | Fraud scoring instead of ad spacing; admin views; phone before the first claim | |
 | `0027_free_stakes` | Any whole-number stake, capped at half the pot plus 10 | cap: `0028` |
 | `0028_stake_what_you_hold` | No pot cap: stake any whole number you have free; the handicap switched off | |
-| `0029_card_opens_with_bets` | A card is listed, and mailed about, once its first bet is saved | `v_board`: `0029` |
+| `0029_card_opens_with_bets` | A card is listed, and mailed about, once its first bet is saved | |
+| `0030_players_before_kickoff` | Squads soonest kick-off first, every pass; pre-match line-ups | |
