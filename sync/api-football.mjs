@@ -23,15 +23,18 @@ import { dirname } from "node:path";
 const argv = new Set(process.argv.slice(2));
 const DRY = argv.has("--dry");
 const HERE = dirname(new URL(import.meta.url).pathname);
+// THEPOOL_NO_MAIN is the tests importing the parsers: no .env, no key, no sync (a fresh clone has neither)
+const TESTING = !!process.env.THEPOOL_NO_MAIN;
+const readEnv = () => { try { return readFileSync(`${HERE}/.env`, "utf8"); } catch (e) { if (TESTING) return ""; throw e; } };
 const env = Object.fromEntries(
-  readFileSync(`${HERE}/.env`, "utf8").split("\n").filter((l) => /^\w+=/.test(l))
+  readEnv().split("\n").filter((l) => /^\w+=/.test(l))
     .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()]),
 );
 const db = new PostgrestClient(`${env.SUPABASE_URL}/rest/v1`, {
   schema: "pool", headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}` },
 });
 const KEY = env.FOOTBALL_API_KEY;
-if (!KEY) { console.error("FOOTBALL_API_KEY is not set in sync/.env"); process.exit(1); }
+if (!KEY && !TESTING) { console.error("FOOTBALL_API_KEY is not set in sync/.env"); process.exit(1); }
 const STATE_FILE = env.STATE_FILE || "/var/lib/thepool-sync/state.json";
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
@@ -566,4 +569,4 @@ async function main() {
 
 export { matchRow, parseEvents, parseLineups, parseOdds, normal, STATUS };
 // importing for a parser check (THEPOOL_NO_MAIN=1) must not run a sync
-if (!process.env.THEPOOL_NO_MAIN) main().catch((e) => { log("sync failed:", e.message); process.exit(1); });
+if (!TESTING) main().catch((e) => { log("sync failed:", e.message); process.exit(1); });

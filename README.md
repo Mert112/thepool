@@ -8,7 +8,7 @@ A free-to-play **football** prediction game. People call what will happen in a m
 git clone https://github.com/Mert112/thepool.git && cd thepool
 git config core.hooksPath .githooks          # lint on commit
 sudo apt install postgresql-17               # any Postgres 17 with a role that can create databases
-(cd web && npm ci)                           # the web app's dependencies (the tests use them too)
+npm ci --prefix web && npm ci --prefix sync    # dependencies (the tests use both)
 bash tests/run.sh                            # rebuild a local db from every migration, run every test
 cd web && npm run dev                        # http://localhost:5173 against the live project (VITE_SUPABASE_* to change)
 npm test && npm run lint && npm run typecheck

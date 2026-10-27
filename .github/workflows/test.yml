@@ -12,11 +12,10 @@ jobs:
         options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env: { PGHOST: localhost, PGUSER: postgres, PGPASSWORD: postgres }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm, cache-dependency-path: web/package-lock.json }
-      - run: npm ci
-        working-directory: web
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 20, cache: npm, cache-dependency-path: "*/package-lock.json" }
+      - run: npm ci --prefix web && npm ci --prefix sync   # the sync's parser tests import its client
       - run: bash tests/run.sh            # every migration, every SQL suite, the .mjs tests and npm test
       - run: npm run typecheck && npm run lint
         working-directory: web
