@@ -25,4 +25,5 @@ says what it does and why; this is the index.
 | `0024_api_football` | One provider (API-Football), request budget, league catalogue, follows | |
 | `0025_rewarded_ads` | Rewarded ads with a single-use nonce and a ten-a-day cap | spacing: `0026` |
 | `0026_ad_fraud_scoring` | Fraud scoring instead of ad spacing; admin views; phone before the first claim | |
-| `0027_free_stakes` | Any whole-number stake, capped at half the pot plus 10 | |
+| `0027_free_stakes` | Any whole-number stake, capped at half the pot plus 10 | cap: `0028` |
+| `0028_stake_what_you_hold` | No pot cap: stake any whole number you have free; the handicap switched off | |

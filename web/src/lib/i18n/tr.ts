@@ -64,6 +64,7 @@ export const tr: Dict = {
   },
 
   board: {
+    noGamesYet: "Önümüzdeki hafta için henüz maç yok — sağlayıcı listeler listelemez bir dakika içinde gelir.",
     live: (n2: number) => `Canlı (${n2})`,
     upcoming: "Yaklaşan",
     settled: "Biten",
@@ -170,7 +171,8 @@ export const tr: Dict = {
     squadLoading: "Bu tarafın kadrosu hâlâ yükleniyor — birazdan tekrar bak.",
     redWindow: "Ne zaman? İsteğe bağlı — tahmini daralt, daha az kişi bilir, pot daha az kişiye bölünür. Uzatma dakikaları ait olduğu yarının son aralığına sayılır.",
     stake: "Yatırım",
-    stakeCap: (n: string) => `burada en çok ${n}`,
+    amount: "Miktar",
+    stakeUpTo: (n: string) => `boşta ${n} puanın var`,
     wholePurse: "kimse katılmazsa potun tamamı",
     backIfLands: "döner, tutarsa",
     about: "yaklaşık",
@@ -411,9 +413,9 @@ export const tr: Dict = {
     simpleCard: "Basit kupon",
     simpleCardIs: " — maç sonucu ve gol çizgisi. İki tahmin, bir dakika.",
     complexCard: "Geniş kupon",
-    complexCardIs: " — üstüne handikap, kesin skor, gol atacak oyuncu, asist, sarı ve kırmızı kart. Beş dakika.",
+    complexCardIs: " — üstüne kesin skor, gol atacak oyuncu, asist, sarı ve kırmızı kart. Beş dakika.",
     theStake: "Yatırım",
-    theStakeIs: " — her tahmine istediğin tam sayıda puan: boştaki puanın kadar ve potun yarısı artı 10’a kadar, böylece kimse sonradan gelip potu ezemez. 1, 5, 10, 25 ve 50 tek dokunuş. Tahminin üzerinde ne kadar az kişi varsa pottan o kadar çok alırsın.",
+    theStakeIs: " — her tahmine boştaki puanın kadar, istediğin tam sayıda puan. 1, 5, 10, 25 ve 50 tek dokunuş.",
     theJackpot: "Jackpot",
     theJackpotIs: " — kimsenin tutturamadığı tahminin potu, o turnuvadaki bir sonraki maça devreder.",
   },
@@ -470,7 +472,7 @@ export const tr: Dict = {
   about: {
     title: "The Pool hakkında",
     sections: [
-      ["Nedir", "The Pool bir futbol tahmin oyunu. Maçta ne olacağını söylersin — maç sonucu, gol çizgisi, handikap, kesin skor, gol atacak oyuncu, asist, sarı kart, kırmızı kart — ve her tahmine puan yatırırsın. Bir tahmine yatan her puan tek bir pota girer. Maç sonunda doğru bilenler o potu, yatırdıkları oranında paylaşır."],
+      ["Nedir", "The Pool bir futbol tahmin oyunu. Maçta ne olacağını söylersin — maç sonucu, gol çizgisi, kesin skor, gol atacak oyuncu, asist, sarı kart, kırmızı kart — ve her tahmine puan yatırırsın. Bir tahmine yatan her puan tek bir pota girer. Maç sonunda doğru bilenler o potu, yatırdıkları oranında paylaşır."],
       ["Para değil, puan", "Puan satın alınamaz ve paraya çevrilemez. Herkes sezona 100 puanla başlar. Hiç puan basılmaz: kazandığın puanı başkası yatırmıştır. Oyuna puan girmesinin tek iki yolu sezon başlangıcı ve reklam izleme ödülü; ikisi de sadece sunucunun yazabildiği, ekleme yapılan ve hiç silinmeyen bir deftere kaydedilir."],
       ["PlayStation", "Bir milyon puana ulaşırsan PlayStation 5 talep edebilirsin. Talepleri elle yürütüyoruz ve sana e-posta atıyoruz. Katılım ücreti ya da satın alma yok: o bir milyonun diğer oyunculardan kazanılması gerekiyor."],
       ["Kimin için", "Ekipler için — hafta hafta aynı arkadaş grubu, kodla davet edilir. Oyun bir kumarhanenin değil, bir grup sohbetinin etrafına kurulu."],
@@ -593,7 +595,6 @@ export const tr: Dict = {
   errorPatterns: {
     wholeStake: (got: string) => `Yatırım tam sayı bir puan olmalı — ${got} değil.`,
     stakeFree: (n: string) => `Bir tahmine en çok ${n} yatırabilirsin — boştaki puanın bu kadar.`,
-    stakeCap: (n: string) => `Bu tahmine şu an en çok ${n} yatırabilirsin — potun yarısı artı 10.`,
     notEnough: (hold: string, stakes: string, promised: string) =>
       `Puanın yetmiyor: elinde ${hold} var, bu kupon ${stakes} yatırıyor ve ${promised} puan açık başka kuponlara sözlü. Bir yatırımı düşür ya da bir tahmini çıkar.`,
     prizeShort: (hold: string) => `PlayStation 5 için 1.000.000 puan gerekiyor. Elinde ${hold} var.`,

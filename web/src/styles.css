@@ -51,6 +51,7 @@ h3.display { font-size: 22px; margin: 0 0 10px; }
 /* pills, chips, buttons */
 .pill { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 8px 16px; border-radius: 999px; border: 2px solid var(--line); background: transparent; color: var(--soft); }
 .pill.on { border-color: var(--lime); background: var(--lime); color: var(--ink); }
+.chip.dim { opacity: 0.5; }
 .chip { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--mute); }
 .chip.on { border-color: var(--text); color: var(--text); }
 .row-of { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -125,7 +126,7 @@ label.field > span { display: block; margin-bottom: 6px; font-size: 11px; font-w
 .stake-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--raise); }
 .chip.stake { font-family: var(--display); font-size: 15px; letter-spacing: 0.02em; padding: 7px 14px; min-width: 52px; text-align: center; }
 .chip.stake.on { border-color: var(--lime); background: var(--lime); color: var(--ink); }
-.stake-input { width: 84px; padding: 7px 10px; font-family: var(--display); font-size: 15px; }
+.stake-input { width: 110px; border-color: var(--lime); padding: 7px 10px; font-family: var(--display); font-size: 15px; }
 .stake-input[aria-invalid="true"] { border-color: var(--magenta); }
 .stake-pay { margin-left: auto; font-size: 12px; color: var(--soft); }
 .stake-pay b { font-family: var(--display); font-size: 17px; color: var(--lime); margin: 0 2px; }

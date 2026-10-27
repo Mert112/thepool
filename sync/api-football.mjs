@@ -3,6 +3,7 @@
 //
 //   · once a week   the league catalogue, so "More leagues" knows what exists
 //   · once a day    fixtures for every followed competition, and squads for the teams playing
+//                   (a league followed since then: on the next pass)
 //   · every minute  the fixtures that are in play *and* have a card on them, in batches of
 //                   twenty, with their events and line-ups — then settlement
 //   · after the whistle  one results check for everything else that kicked off
@@ -372,8 +373,9 @@ async function catalogue(base) {
   return n;
 }
 
-async function fixtures(base, cfg) {
-  const leagues = must(await db.rpc("sync_leagues"), "sync_leagues");
+// `only`: a set of league codes to fetch instead of all of them (a league just followed)
+async function fixtures(base, cfg, only = null) {
+  const leagues = must(await db.rpc("sync_leagues"), "sync_leagues").filter((l) => !only || only.has(l.code));
   const from = day(addDays(new Date(), -(cfg.window_days_back ?? 2)));
   const to = day(addDays(new Date(), cfg.window_days_forward ?? 8));
   let got = 0, written = 0;
@@ -393,7 +395,7 @@ async function fixtures(base, cfg) {
     await upsertMatches(ms);
     written += ms.length;
   }
-  return { leagues: leagues.length, got, written };
+  return { leagues: leagues.length, got, written, codes: leagues.map((l) => l.code) };
 }
 
 // One fixture detail carries the score, the events and the line-ups, and twenty of them fit in
@@ -534,12 +536,25 @@ async function main() {
   const base = cfg.base ?? "https://v3.football.api-sports.io";
 
   const doCatalogue = argv.has("--catalogue") || due(state.lastCatalogue, cfg.catalogue_every_days ?? 7);
-  const doFixtures = argv.has("--fixtures") || due(state.lastFixtures, cfg.fixtures_every_days ?? 1);
+  // (and once when the state predates `fixtureLeagues`, so it learns which leagues have been fetched)
+  const doFixtures = argv.has("--fixtures") || due(state.lastFixtures, cfg.fixtures_every_days ?? 1) || !state.fixtureLeagues;
   const doSquads = argv.has("--squads") || due(state.lastSquads, cfg.squads_every_days ?? 1);
 
   let cat = 0, fx = null, sq = 0, od = 0;
   if (doCatalogue) { cat = await catalogue(base); if (cat) state.lastCatalogue = now(); }
-  if (doFixtures) { fx = await fixtures(base, cfg); if (fx.got || DRY) state.lastFixtures = now(); }
+  if (doFixtures) {
+    fx = await fixtures(base, cfg);
+    if (fx.got || DRY) { state.lastFixtures = now(); state.fixtureLeagues = fx.codes; }
+  } else {
+    // a league somebody just followed gets its fixtures on the next pass, not at tomorrow's
+    // daily one — otherwise it is missing from the board for up to a day (one request each)
+    const known = new Set(state.fixtureLeagues ?? []);
+    const fresh = new Set(must(await db.rpc("sync_leagues"), "sync_leagues").map((l) => l.code).filter((c) => !known.has(c)));
+    if (fresh.size) {
+      fx = await fixtures(base, cfg, fresh);
+      state.fixtureLeagues = [...known, ...fresh];
+    }
+  }
 
   // every minute: the fixtures in play that somebody is playing, then everything else that has
   // finished and not been settled — the second only costs a request when there is one to check

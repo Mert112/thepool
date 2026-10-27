@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026-10-27 — stake what you hold, no handicap, the leagues bar, and cards others can see
+
+Migration `0028_stake_what_you_hold.sql`, the sync script and the web app. All live.
+
+### Stakes: any number you have the points for
+
+The free-amount field from `0027` was there, but the cap that came with it — half of what the
+others had in the pot, plus 10 — meant **10 at most on any card nobody had played yet**, so typing
+40 turned the field red and greyed out 25 and 50. It looked like nothing had changed. **The cap is
+gone** (`stake_cap()` dropped): a stake is any whole number of points from 1 up to what you have
+free (balance less what other open cards promise), checked in `rpc_save_calls`. The amount field
+now comes first, outlined, with "you have N free" beside it; the quick buttons follow.
+
+### The handicap is off
+
+`markets.enabled = false` for `spread`. Nothing open held a handicap call; the four settled ones
+keep their history, and settlement still knows how to judge them, so `football_test.sql` and
+`i18n_test.sql` switch it back on inside their own rolled-back transactions. The help text in all
+three languages no longer lists it.
+
+### The leagues bar above the matches
+
+**What was wrong:** the sync fetched fixtures for followed leagues **once a day**, so a league
+nobody had followed before had no games until the next day's pass — and the bar only showed
+leagues that had games, from a board list loaded once and never reloaded. Following a league
+therefore changed nothing above the matches.
+
+**Fixed:**
+- `sync/api-football.mjs` remembers which leagues its last fixtures pass covered and, every minute,
+  fetches any league followed since (one request each). Its first run after the change did a full
+  pass: 21 leagues, 194 fixtures, 27 requests. Angola, Estonia and Eswatini's leagues now have
+  games; Yemen's has none in the next eight days.
+- The bar shows **every league you follow**, in the "My leagues" order; one with no games yet is
+  dimmed and says why. Unfollowing removes it at once, and a selected league that is unfollowed
+  falls back to "All".
+- The board reloads when your follows change.
+
+### A new card is open to everyone straight away
+
+The database made a new card visible at once, but the board loaded once and never refreshed, so
+other players saw "Open it" until they reloaded the page — and clicking it showed the create dialog
+for a card that already existed. The board now refreshes every 30 seconds while the tab is open and
+whenever you come back to it, and "Open it" checks for an existing card first and takes you to it.
+
+### Verified
+
+All suites pass (the cap tests became a no-cap test: Cem stakes his whole 100 on an empty pot).
+Production's function and market fingerprints match the local build after `0028`.
+
+---
+
 ## 2026-10-27 — a refactor for reading: features, one query helper, strict types, CI
 
 No behaviour change and no schema change. Deployed; production's twelve fingerprints are

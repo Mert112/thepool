@@ -112,9 +112,8 @@ The red card takes an optional 15-minute window, which narrows the call — fewe
 ## Points are a currency, and the pot is all there is to win
 
 Everyone starts a season with **100 points**. Every call carries a stake the player picks — **any
-whole number of points**, up to what is free (balance less other open cards) and up to **half of
-what the others already have in that call's pot, plus 10** (0027), so nobody can swamp a pot late.
-1, 5, 10, 25 and 50 are quick buttons; a stake already saved is never pushed out by the cap. The stake leaves the balance when the card **locks at kick-off**, not when it
+whole number of points** up to what is free (balance less other open cards) — 0028 removed the
+pot cap that 0027 had. 1, 5, 10, 25 and 50 are quick buttons. The stake leaves the balance when the card **locks at kick-off**, not when it
 is saved. Every stake on a call type goes into **one pot for that card**.
 
 At full time, per pot:

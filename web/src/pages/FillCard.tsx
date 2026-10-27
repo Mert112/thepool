@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getCard, getCrowd, getMarkets, getMyEntry, getSquads, saveCalls, type Call, type CallType, type Market, type Player } from "../features/card/api";
-import { getCardPots, myCommittedStake, stakeLimit, STAKES, type PotRow } from "../features/economy/api";
+import { getCardPots, myCommittedStake, STAKES, type PotRow } from "../features/economy/api";
 import { getMatch } from "../features/board/api";
 import { useAuth, useLoad, useNow } from "../lib/auth";
 import { soon } from "../lib/format";
@@ -118,12 +118,9 @@ export default function FillCard() {
   // what is left for this card: the balance, less what other open cards have already promised
   const purse = (profile?.balance ?? 0) - (data?.elsewhere ?? 0);
   const overdrawn = staked > purse;
-  // §0027 the most one call can take (the server applies the same rule)
-  const limit = (ct: CallType) => stakeLimit(potOf(ct)?.pot ?? 0, data?.entry?.calls.find((c) => c.call_type === ct)?.stake ?? 0, purse);
+  // §0028 a stake is any whole number of points you have free (the server checks the same)
   const free = Math.max(0, Math.floor(purse));
-  const potCap = (ct: CallType) => limit(ct).cap;
-  const maxStake = (ct: CallType) => limit(ct).max;
-  const badStake = slip.some((k) => { const n = stakeOf(k.call_type); return !Number.isInteger(n) || n < 1 || n > maxStake(k.call_type); });
+  const badStake = slip.some((k) => { const n = stakeOf(k.call_type); return !Number.isInteger(n) || n < 1 || n > free; });
 
   // what identifies a pick, for checking the database kept what we sent. `line` is the server's to set.
   const sig = (c: Call) => [c.call_type, c.team_id ?? "", c.yes ?? "", c.player_id ?? "", c.home_goals ?? "", c.away_goals ?? "", c.pick ?? "", c.stake ?? DEFAULT_STAKE].join("|");
@@ -309,14 +306,15 @@ export default function FillCard() {
                 {on && (
                   <div className="stake-row">
                     <span className="eyebrow">{t.fill.stake}</span>
-                    {STAKES.map((n) => (
-                      <button key={n} disabled={!editable || n > maxStake(k.call_type)} className={"chip stake" + (stakeOf(k.call_type) === n ? " on" : "")} onClick={() => setStake(k.call_type, n)}>{fmt.num(n)}</button>
-                    ))}
-                    <input className="input stake-input" type="number" inputMode="numeric" min={1} max={maxStake(k.call_type)} step={1}
-                           disabled={!editable} aria-label={t.fill.stake} value={stakeOf(k.call_type) || ""}
-                           aria-invalid={stakeOf(k.call_type) < 1 || stakeOf(k.call_type) > maxStake(k.call_type)}
+                    {/* type any amount you have free; the buttons are shortcuts */}
+                    <input className="input stake-input" type="number" inputMode="numeric" min={1} max={free} step={1}
+                           disabled={!editable} aria-label={t.fill.stake} placeholder={t.fill.amount} value={stakeOf(k.call_type) || ""}
+                           aria-invalid={stakeOf(k.call_type) < 1 || stakeOf(k.call_type) > free}
                            onChange={(e) => setStake(k.call_type, e.target.value === "" ? 0 : Math.trunc(Number(e.target.value)))} />
-                    {editable && potCap(k.call_type) < free && <span className="tiny muted">{t.fill.stakeCap(fmt.num(potCap(k.call_type)))}</span>}
+                    {STAKES.map((n) => (
+                      <button key={n} disabled={!editable || n > free} className={"chip stake" + (stakeOf(k.call_type) === n ? " on" : "")} onClick={() => setStake(k.call_type, n)}>{fmt.num(n)}</button>
+                    ))}
+                    {editable && <span className="tiny muted">{t.fill.stakeUpTo(fmt.num(free))}</span>}
                     <span className="stake-pay">{payout(k) == null ? t.fill.wholePurse : <>{t.fill.about} <b>{fmt.pts(payout(k))}</b> {t.fill.backIfLands}</>}</span>
                   </div>
                 )}

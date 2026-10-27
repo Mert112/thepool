@@ -93,9 +93,9 @@ end $$;
 select fixture(9500, 'PL');
 do $$ begin
   begin
-    perform play('11111111-aaaa-0000-0000-000000000001', 9500, '[{"call_type":"scorer","player_id":90011,"stake":100}]');
-    raise exception 'a 100 stake swamped an empty pot';
-  exception when others then if sqlerrm not like '%most you can stake on this call%' then raise; end if; end;
+    perform play('11111111-aaaa-0000-0000-000000000001', 9500, '[{"call_type":"scorer","player_id":90011,"stake":101}]');
+    raise exception 'a stake above the balance was accepted';
+  exception when others then if sqlerrm not like '%at most 100 on one call%' then raise; end if; end;
 end $$;
 select play(:'A', 9500, '[{"call_type":"scorer","player_id":90011,"stake":1}]');
 do $$ begin

@@ -59,7 +59,7 @@ calls `rpc_*` functions; it never writes a table directly and never decides what
 | Concern | Database | Web app | Tests |
 |---|---|---|---|
 | Board, leagues, following | `0017` (`v_board`), `0024` | `features/board/`, `pages/Board.tsx`, `pages/Settings.tsx` | `provider_test.sql`, `features/board/follows.test.mjs` |
-| Cards and calls | `0002`, `0011`, `0021`, `0027` | `features/card/`, `pages/FillCard.tsx`, `pages/LiveCard.tsx`, `pages/Match.tsx` | `game_test.sql`, `football_test.sql` |
+| Cards and calls | `0002`, `0011`, `0021`, `0027`, `0028` | `features/card/`, `pages/FillCard.tsx`, `pages/LiveCard.tsx`, `pages/Match.tsx` | `game_test.sql`, `football_test.sql` |
 | Points, pots, prize | `0019`–`0021`, `0026`, `0027` | `features/economy/`, `pages/Profile.tsx`, `pages/Table.tsx` | `economy_test.sql`, `jackpot_test.sql`, `features/economy/stakes.test.mjs` |
 | Ads and fraud scoring | `0025`, `0026` | `features/ads/` | `ads_test.sql`, `features/ads/AdModal.test.mjs` |
 | Crews | `0002`, `0005` | `features/crews/`, `pages/Crews.tsx`, `pages/CrewRoom.tsx` | `game_test.sql` |

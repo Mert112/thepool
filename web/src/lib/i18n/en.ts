@@ -76,6 +76,7 @@ export const en = {
 
   // ---- the board ----------------------------------------------------------------------------
   board: {
+    noGamesYet: "No games in the next week yet — they arrive within a minute of the provider listing them.",
     live: (n2: number) => `Live now (${n2})`,
     upcoming: "Upcoming",
     settled: "Settled",
@@ -184,7 +185,8 @@ export const en = {
     squadLoading: "Squad still loading for this side — check back in a minute.",
     redWindow: "When? Optional — narrow the call and fewer people will be right, so the pot splits fewer ways. Stoppage time counts in its half's last window.",
     stake: "Stake",
-    stakeCap: (n: string) => `max ${n} here`,
+    amount: "Amount",
+    stakeUpTo: (n: string) => `you have ${n} free`,
     wholePurse: "the whole purse, if nobody else joins you",
     backIfLands: "back if it lands",
     about: "about",
@@ -432,9 +434,9 @@ export const en = {
     simpleCard: "Simple card",
     simpleCardIs: " — the result and the goals line. Two calls, one minute.",
     complexCard: "Complex card",
-    complexCardIs: " — adds the handicap, the exact scoreline, a goalscorer, an assist, a yellow and a red. Five minutes.",
+    complexCardIs: " — adds the exact scoreline, a goalscorer, an assist, a yellow and a red. Five minutes.",
     theStake: "The stake",
-    theStakeIs: " — any whole number of points on each call, up to what you have free and to half the pot plus 10, so nobody can swamp a pot late. 1, 5, 10, 25 and 50 are one tap. The fewer people on your pick, the more of the pot it takes.",
+    theStakeIs: " — any whole number of points you have free, on each call. 1, 5, 10, 25 and 50 are one tap.",
     theJackpot: "The jackpot",
     theJackpotIs: " — a call nobody lands rolls its pot into the next match in that competition.",
   },
@@ -491,7 +493,7 @@ export const en = {
   about: {
     title: "About The Pool",
     sections: [
-      ["What it is", "The Pool is a football prediction game. You call what will happen in a match — the result, the goals line, the handicap, the exact scoreline, a goalscorer, an assist, a yellow, a red — and you stake points on each call. Every stake on a call goes into one pot. At full time the people who got it right share that pot out, in proportion to what they staked."],
+      ["What it is", "The Pool is a football prediction game. You call what will happen in a match — the result, the goals line, the exact scoreline, a goalscorer, an assist, a yellow, a red — and you stake points on each call. Every stake on a call goes into one pot. At full time the people who got it right share that pot out, in proportion to what they staked."],
       ["Points, not money", "Points cannot be bought and cannot be cashed out. Everyone starts a season with 100 of them. Nothing is ever minted: what you win, somebody else staked. The only ways points enter the game at all are the season start and the half-point for watching an ad, and both are counted in an append-only ledger the server alone can write to."],
       ["The PlayStation", "Reach a million points and you can claim a PlayStation 5. We handle claims by hand and will email you. There is no entry fee and no purchase: the million has to be won off other players."],
       ["Who it is for", "Crews — the same group of friends, week after week, invited by a code. The game is built around a group chat, not around a casino."],
@@ -622,7 +624,6 @@ export const en = {
   errorPatterns: {
     wholeStake: (got: string) => `A stake is a whole number of points — not ${got}.`,
     stakeFree: (n: string) => `You can stake at most ${n} on one call — that is what you have free.`,
-    stakeCap: (n: string) => `The most you can stake on this call right now is ${n} — half the pot plus 10.`,
     notEnough: (hold: string, stakes: string, promised: string) =>
       `Not enough points: you hold ${hold}, this card stakes ${stakes}, and ${promised} is already promised to other open cards. Lower a stake or drop a call.`,
     prizeShort: (hold: string) => `A PlayStation 5 takes 1,000,000 points. You hold ${hold}.`,

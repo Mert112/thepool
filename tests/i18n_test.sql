@@ -11,6 +11,8 @@ insert into players (id, team_id, name) values (1, 57, 'Saka'), (5, 64, 'Salah')
 insert into matches (id, competition_code, season, utc_date, status, home_team_id, away_team_id, total_line)
   values (1000, 'PL', '2026', now() + interval '2 hours', 'TIMED', 57, 64, 2.5);
 update matches set odds = '{"provider":"test","spread":{"home_line":-1,"home":1.9,"away":1.9}}'::jsonb where id = 1000;
+-- the handicap is off for new calls (0028); its labels still have to translate for settled ones
+update markets set enabled = true where call_type = 'spread';
 
 insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111', 'mina@example.com'),

@@ -77,10 +77,15 @@ do $$ begin
   assert to_regclass('pool.match_props') is null, 'player over/unders are gone with basketball';
   -- the card on offer
   assert (select array_agg(call_type::text order by sort_order) from markets where enabled)
-         = array['winner','total','spread','score','scorer','assist','yellow','red'], 'the football card';
+         = array['winner','total','score','scorer','assist','yellow','red'], 'the football card: no handicap since 0028';
+  assert not (select enabled from markets where call_type = 'spread'), 'the handicap is switched off';
   assert (select array_agg(call_type::text order by call_type::text) from markets where enabled and simple)
          = array['total','winner'], 'the simple card is the result and the goals line';
 end $$;
+
+-- The handicap is off for new calls (0028), but four settled ones exist and settlement still has
+-- to judge a corrected match the same way. Switched back on inside this rolled-back test only.
+update markets set enabled = true where call_type = 'spread';
 
 -- --- validation -----------------------------------------------------------------
 do $$ declare u text := 'aaaaaaaa-0000-0000-0000-000000000001'; begin

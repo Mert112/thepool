@@ -3,7 +3,7 @@
 import { must, supabase } from "../../lib/supabase";
 import type { CallType } from "../card/api";
 
-// the quick-pick stakes, as in pool.stakes. Any whole number from 1 is a stake (0027).
+// the quick-pick stakes, as in pool.stakes. Any whole number you have free is a stake (0028).
 export const STAKES = [1, 5, 10, 25, 50] as const;
 
 // §4 what is in each pot on this card right now, and what a point staked on each pick would
@@ -50,11 +50,4 @@ export async function verifyPhone(body: { action: "start"; phone: string } | { a
     throw new Error(msg ?? error.message);
   }
   return data as { sent?: boolean; verified?: boolean };
-}
-
-/** §0027 The most one call can take: what is free, and half of what the others have in its pot
- *  plus ten — unless the call already holds more, which is never taken away. Mirrors rpc_save_calls. */
-export function stakeLimit(potOnCall: number, storedStake: number, free: number) {
-  const cap = Math.max(Math.floor((potOnCall - storedStake) * 0.5) + 10, storedStake);
-  return { cap, max: Math.min(Math.max(0, Math.floor(free)), cap) };
 }

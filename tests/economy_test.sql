@@ -116,7 +116,7 @@ do $$ begin
   assert to_regprocedure('pool.call_multiplier(pool.markets, text)') is null, 'call_multiplier is gone';
 end $$;
 
--- --- 3. a stake is a whole number, within the balance and the pot, and nothing moves until kick-off
+-- --- 3. a stake is a whole number within the balance, and nothing moves until kick-off
 do $$ begin
   assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
     '[{"call_type":"winner","team_id":9001,"stake":0}]', '%whole number%'), 'zero is not a stake';
@@ -126,9 +126,6 @@ do $$ begin
     '[{"call_type":"winner","team_id":9001,"stake":"7"}]', '%whole number%'), 'nor a string';
   assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
     '[{"call_type":"winner","team_id":9001,"stake":101}]', '%at most 100%'), 'nor more than the balance';
-  assert rejects('11111111-aaaa-0000-0000-000000000001', 9100,
-    '[{"call_type":"winner","team_id":9001,"stake":11}]', '%most you can stake on this call right now is 10%'),
-    'an empty pot takes ten at most';
 end $$;
 
 select play(:'A', 9000, '[
@@ -157,18 +154,13 @@ do $$ declare card uuid := (select id from cards where match_id = 9000); p recor
   assert p.per_point = 1.5, format('a point on Athletic returns 1.50, not %s', p.per_point);
 end $$;
 
--- --- 4b. the cap: half of what the others have in the pot, plus ten ----------------------------------
-do $$ declare card uuid := (select id from cards where match_id = 9000); begin
-  -- Ana's 10 is the pot Ben measured against: 5 + 10 = 15 was his ceiling, and 16 is over it
-  assert stake_cap(card, 'winner', '22222222-bbbb-0000-0000-000000000002') = 15, 'half of 10, plus 10';
-  assert rejects('22222222-bbbb-0000-0000-000000000002', 9000, '[
-    {"call_type":"winner","team_id":9002,"stake":16},
-    {"call_type":"score","home_goals":1,"away_goals":2,"stake":5}]', '%most you can stake on this call right now is 15%'),
-    'nobody takes over a pot after others have staked';
-  -- Ben's 15 lifts Ana's ceiling to 17; her saved 10 is hers whatever the pot does
-  assert stake_cap(card, 'winner', '11111111-aaaa-0000-0000-000000000001') = 17, 'half of 15, rounded down, plus 10';
-  -- Cem is not in this pot at all: what he faces is half of all 25, plus 10
-  assert stake_cap(card, 'winner', '33333333-cccc-0000-0000-000000000003') = 22, 'a newcomer measures the whole pot';
+-- --- 4b. no pot cap (0028): anything up to what you have free, even into an empty pot --------------
+do $$ begin
+  assert to_regprocedure('pool.stake_cap(uuid, pool.call_type, uuid)') is null, 'the cap is gone';
+  perform play('33333333-cccc-0000-0000-000000000003', 9300, '[{"call_type":"winner","team_id":9001,"stake":100}]');
+  assert committed_stake('33333333-cccc-0000-0000-000000000003'::uuid) = 100, 'Cem put his whole 100 on an empty pot';
+  perform play('33333333-cccc-0000-0000-000000000003', 9300, '[]');   -- and takes it back off
+  assert committed_stake('33333333-cccc-0000-0000-000000000003'::uuid) = 0, 'an emptied card promises nothing';
 end $$;
 
 -- --- 5. the stake is deducted when the card locks ----------------------------------------------
