@@ -136,11 +136,11 @@ select process_match_updates();
 do $$ begin
   assert res('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'scorer') = 'void', 'an unused sub voids the scorer';
   assert res('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'yellow') = 'miss', 'played, not booked: a miss';
-  -- three calls at the default 10. Ana is alone in the result pot, so 10 goes in, 1 is raked and 9
-  -- comes back; the void is handed back whole; the yellow is lost and rolls into the jackpot.
-  assert paid('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'winner') = 9, 'the result pot paid 9';
-  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8000) = 9 + 10 - 30, format('Ana is %s on the card', pts('aaaaaaaa-0000-0000-0000-000000000001', 8000));
-  assert jackpot_of('FRI', 'yellow') = 9, 'the yellow nobody landed rolled 9 forward';
+  -- three calls at the default 10. Ana is alone in the result pot, so her 10 goes in and comes
+  -- back whole; the void is handed back whole; the yellow is lost and rolls into the jackpot.
+  assert paid('aaaaaaaa-0000-0000-0000-000000000001', 8000, 'winner') = 10, 'the result pot paid 10';
+  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8000) = 10 + 10 - 30, format('Ana is %s on the card', pts('aaaaaaaa-0000-0000-0000-000000000001', 8000));
+  assert jackpot_of('FRI', 'yellow') = 10, 'the yellow nobody landed rolled 10 forward';
   assert res('bbbbbbbb-0000-0000-0000-000000000002', 8000, 'total') = 'miss', 'one goal is under 2.5';
 end $$;
 
@@ -179,8 +179,8 @@ select play(:'A', 8500, '[{"call_type":"red","player_id":80011,"pick":"31-45"}]'
 select play(:'B', 8500, '[{"call_type":"red","player_id":80011,"pick":"76-90"}]');
 do $$ begin
   assert (select label from card_crowd((select id from cards where match_id = 8500 and crew_id is null)) where key = '80011:31-45') = 'Krishna · 31-45''', 'crowd: the window';
-  -- two players, 10 each: 20 in the pot, 18 after the rake, so a point on either window is worth 1.80
-  assert (select per_point from card_pots((select id from cards where match_id = 8500 and crew_id is null)) where key = '80011:31-45') = 1.8, 'a point on that window returns 1.80';
+  -- two players, 10 each: 20 in the pot, so a point on either window is worth 2.00
+  assert (select per_point from card_pots((select id from cards where match_id = 8500 and crew_id is null)) where key = '80011:31-45') = 2, 'a point on that window returns 2.00';
 end $$;
 update matches set status = 'IN_PLAY', utc_date = now() - interval '1 hour' where id = 8500;
 insert into match_events (match_id, type, minute, injury_time, team_id, player_id, provider_key) values (8500, 'red', 45, 2, 8001, 80011, 'r1');
@@ -195,9 +195,9 @@ select finish(8500, 0, 1);
 select process_match_updates();
 do $$ begin
   assert res('bbbbbbbb-0000-0000-0000-000000000002', 8500, 'red') = 'miss', 'the wrong window misses';
-  -- 20 in, 2 raked, 18 to the only right answer
-  assert paid('aaaaaaaa-0000-0000-0000-000000000001', 8500, 'red') = 18, 'and full time pays the pot';
-  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8500) = 8, 'Ana is 8 up on the card';
+  -- 20 in, all 20 to the only right answer
+  assert paid('aaaaaaaa-0000-0000-0000-000000000001', 8500, 'red') = 20, 'and full time pays the pot';
+  assert pts('aaaaaaaa-0000-0000-0000-000000000001', 8500) = 10, 'Ana is 10 up on the card';
   assert pts('bbbbbbbb-0000-0000-0000-000000000002', 8500) = -10, 'Ben is 10 down';
 end $$;
 

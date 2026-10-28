@@ -43,7 +43,7 @@ export default function Table() {
           {rows.map((r, i) => { const mv = move(r, i); return (
             <div key={r.user_id} className={"trow lb" + (r.user_id === uid ? " me" : "")}>
               <span><span className="pos">{i + 1}</span> <span className={"move" + (mv > 0 ? " up" : mv < 0 ? " down" : "")}>{mv > 0 ? `▲${mv}` : mv < 0 ? `▼${-mv}` : "–"}</span></span>
-              <Avatar name={r.display_name} icon={r.icon} me={false} />
+              <Avatar name={r.display_name} icon={r.icon} pic={r.avatar_path} me={false} />
               <span className="small" style={{ fontWeight: 700 }}>{r.user_id === uid ? t.common.you : r.display_name ?? t.common.player}</span>
               <span className="small muted hide-s">{t.table.cards(r.cards)}</span>
               <span className="small muted hide-s">{r.hit_rate}%</span>

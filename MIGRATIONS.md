@@ -29,3 +29,4 @@ says what it does and why; this is the index.
 | `0028_stake_what_you_hold` | No pot cap: stake any whole number you have free; the handicap switched off | |
 | `0029_card_opens_with_bets` | A card is listed, and mailed about, once its first bet is saved | |
 | `0030_players_before_kickoff` | Squads soonest kick-off first, every pass; pre-match line-ups | |
+| `0031_full_pots_and_avatars` | No house cut: pots pay out in full; uploaded profile pictures (`avatars` bucket, `rpc_set_avatar`, `leaderboard.avatar_path`) | Storage parts run only on the hosted database |

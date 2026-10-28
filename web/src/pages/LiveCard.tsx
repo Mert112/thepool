@@ -132,7 +132,7 @@ export default function LiveCard() {
           {ranked.slice(0, 12).map((e, i) => (
             <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 12px", borderRadius: 10, background: e.user_id === uid ? "var(--raise)" : "transparent" }}>
               <span className="pos">{i + 1}</span>
-              <Avatar name={e.profiles?.display_name} icon={e.profiles?.icon} me={!e.profiles?.icon && e.user_id === uid} />
+              <Avatar name={e.profiles?.display_name} icon={e.profiles?.icon} pic={e.profiles?.avatar_path} me={!e.profiles?.icon && e.user_id === uid} />
               <span style={{ flex: 1 }} className="small">{e.user_id === uid ? t.common.you : e.profiles?.display_name ?? t.common.player}<span className="tiny muted" style={{ marginLeft: 8 }}>{t.live.ofCalls(e.hits, e.calls.length)}</span></span>
               <span className="num" style={{ fontSize: 20, color: e.points >= 0 ? "var(--lime)" : "var(--magenta)" }}>{fmt.signedPts(e.points)}</span>
             </div>
@@ -147,7 +147,7 @@ export default function LiveCard() {
             </div>
             {posts.slice(0, 10).map((p) => (
               <div className="post" key={p.id}>
-                <Avatar name={p.profiles?.display_name} icon={p.profiles?.icon} me={!p.profiles?.icon && p.user_id === uid} sm />
+                <Avatar name={p.profiles?.display_name} icon={p.profiles?.icon} pic={p.profiles?.avatar_path} me={!p.profiles?.icon && p.user_id === uid} sm />
                 <div><span className="who">{p.user_id === uid ? t.common.you : p.profiles?.display_name}</span><span className="when">{fmt.ago(p.created_at)}</span>
                   {p.body && <div className="small">{p.body}</div>}
                   {p.calls && <div className="receipt">{t.live.called(markets.find((k) => k.call_type === p.calls!.call_type) ? marketShort(markets.find((k) => k.call_type === p.calls!.call_type)!, t) : p.calls.call_type, fmt.pts(Number(p.calls.points_awarded)))}</div>}

@@ -92,7 +92,7 @@ export default function CrewRoom() {
           {table.map((r, i) => (
             <div key={r.user_id} className={"trow lb crew" + (r.user_id === uid ? " me" : "")}>
               <span className="pos">{i + 1}</span>
-              <Avatar name={r.display_name} icon={r.icon} me={false} />
+              <Avatar name={r.display_name} icon={r.icon} pic={r.avatar_path} me={false} />
               <span className="small">{nameOf(r.user_id)} {i === 0 && <span className="tag solid" style={{ marginLeft: 6 }}>{t.crewRoom.leader}</span>}</span>
               <span className="small muted hide-s">{t.table.cards(r.cards)}</span>
               <span className="small muted hide-s">{r.hit_rate}%</span>
@@ -101,7 +101,7 @@ export default function CrewRoom() {
           ))}
           {members.filter((m) => !table.some((r) => r.user_id === m.user_id)).map((m) => (
             <div key={m.user_id} className="trow lb crew">
-              <span className="pos">–</span><Avatar name={m.profiles?.display_name} me={m.user_id === uid} /><span className="small muted">{nameOf(m.user_id)}</span><span className="small muted hide-s">{t.crewRoom.noCards0}</span><span className="hide-s"></span><span className="ptsc" style={{ color: "var(--mute)" }}>0</span>
+              <span className="pos">–</span><Avatar name={m.profiles?.display_name} pic={m.profiles?.avatar_path} me={m.user_id === uid} /><span className="small muted">{nameOf(m.user_id)}</span><span className="small muted hide-s">{t.crewRoom.noCards0}</span><span className="hide-s"></span><span className="ptsc" style={{ color: "var(--mute)" }}>0</span>
             </div>
           ))}
         </div>
@@ -138,7 +138,7 @@ export default function CrewRoom() {
             const k = p.calls ? markets.find((x) => x.call_type === p.calls!.call_type) : undefined;
             return (
               <div className="post" key={p.id}>
-                <Avatar name={p.profiles?.display_name} me={p.user_id === uid} />
+                <Avatar name={p.profiles?.display_name} pic={p.profiles?.avatar_path} me={p.user_id === uid} />
                 <div>
                   <span className="who">{nameOf(p.user_id)}</span><span className="when">{fmt.ago(p.created_at)}</span>
                   {p.body && <div className="small">{p.body}</div>}

@@ -11,7 +11,6 @@ import CrewRoom from "./pages/CrewRoom";
 import Album from "./pages/Album";
 import Table from "./pages/Table";
 import Profile from "./pages/Profile";
-import Settings from "./pages/Settings";
 import About from "./pages/About";
 import Privacy from "./pages/Privacy";
 import { ConsentBar, Footer } from "./features/ads/ConsentBar";
@@ -49,7 +48,7 @@ export default function App() {
         <Route path="/album" element={<Album />} />
         <Route path="/table" element={<Table />} />
         <Route path="/you" element={<Profile />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/settings" element={<Navigate to="/you" replace />} />
         <Route path="/about" element={<About />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<Navigate to="/" replace />} />

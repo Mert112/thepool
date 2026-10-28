@@ -162,7 +162,7 @@ export const en = {
     noFixture: "Fixture missing.",
     locksIn: (t: string) => `Locks in ${t} · edit as often as you like until then`,
     locked: "This card is locked.",
-    rules: "Every call carries a stake, from a single point, and every stake on a call goes into one pot. Nothing leaves your balance until kick-off. At full time a void is handed back in full, the house takes 10% of what is left, and the rest is shared among the right answers in proportion to what they staked — so a pick is worth more the fewer people are on it. Where nobody landed a call last time out, what they lost is carried here as a jackpot on top.",
+    rules: "Every call carries a stake, from a single point, and every stake on a call goes into one pot. Nothing leaves your balance until kick-off. At full time a void is handed back in full, and everything else in the pot is shared among the right answers in proportion to what they staked — so a pick is worth more the fewer people are on it. Where nobody landed a call last time out, what they lost is carried here as a jackpot on top.",
     notSaved: "Not saved.",
     notSavedInline: (msg: string) => `Not saved — ${msg}`,
     savedWithdrawn: "Your card is withdrawn — you have no calls on this match.",
@@ -257,6 +257,7 @@ export const en = {
     settledUp: (amount: string) => ` Across every settled card you are up ${amount}.`,
     settledDown: (amount: string) => ` Across every settled card you are down ${amount}.`,
     settledLevel: " Across every settled card you are level.",
+    picUpload: "Upload a picture", picChange: "Change picture", picRemove: "Remove",
     yourIcon: "Your icon",
     unlocked: (have: number, of: number) => `${have} of ${of} unlocked`,
     iconBlurb: "Nine of these are earned, and the harder the thing the rarer the icon. Tap one you have unlocked to wear it.",
@@ -575,6 +576,7 @@ export const en = {
   // Keyed on the English the database raises, so a message we have not translated still reaches the
   // player in English rather than disappearing.
   errors: {
+    "That file is not a picture": "That file is not a picture — try a JPG or PNG.",
     "Verify your phone number before your first claim.": "Verify your phone number before your first claim.",
     "Phone verification is switched off right now.": "Phone verification is switched off right now.",
     "Phone verification is not set up yet.": "Phone verification is not set up yet.",

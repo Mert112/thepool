@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-28 — full pots, profile pictures, a week of results, one profile page
+
+Migration `0031_full_pots_and_avatars.sql` and the web app.
+
+- **Pots pay out in full.** The house no longer takes 10%: everything staked on a call is shared
+  among the right answers, and a pot nobody wins rolls whole into the jackpot. The prices on the
+  card (1× the pot instead of 0.9×) and the help text in all three languages say the same. Pots
+  settled before this keep what they paid.
+- **Profile pictures.** "You" has *Upload a picture*: the browser crops it square and shrinks it to
+  256 px, it goes into the public `avatars` bucket under the player's own folder, and
+  `rpc_set_avatar` makes it theirs. It shows in place of the icon in the header, on cards, in crew
+  rooms and on the table. *Remove* goes back to the icon.
+- **Settled shows a week.** The board now reaches seven days back instead of two.
+- **One profile page.** Settings (notifications, my leagues, language, display name) sit at the
+  foot of "You", the header picture opens "You", and `/settings` redirects there.
+
+Tests: the economy, football, game and jackpot suites now expect full pots; the icons suite covers
+the picture rules (own folder only, cleared with null, no direct writes, no anonymous calls).
+
 ## 2026-10-27 — players to pick before the match, and a pot that counts your bet
 
 Migration `0030_players_before_kickoff.sql`, the sync script and the web app. Live.

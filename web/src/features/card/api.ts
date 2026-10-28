@@ -10,7 +10,7 @@ export type Market = { options: string[] | null; call_type: CallType; title: str
   settles_on: "event" | "result" };
 export type Card = { id: string; match_id: number; mode: "simple" | "complex"; crew_id: string | null; created_by: string | null; opened_at: string | null; status: "open" | "locked" | "live" | "settled" | "disputed"; crews?: { name: string } | null };
 export type Call = { id?: string; call_type: CallType; team_id?: number | null; yes?: boolean | null; player_id?: number | null; home_goals?: number | null; away_goals?: number | null; pick?: string | null; line?: number | null; stake?: number; staked?: boolean; result?: "pending" | "hit" | "miss" | "void"; points_awarded?: number };
-export type Entry = { id: string; card_id: string; user_id: string; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null; icon?: string } };
+export type Entry = { id: string; card_id: string; user_id: string; points: number; hits: number; calls: Call[]; profiles?: { display_name: string | null; icon?: string; avatar_path?: string | null } };
 export type Player = { id: number; team_id: number | null; name: string; position: string | null };
 export type MatchEvent = { id: number; type: "goal" | "yellow" | "red" | "yellow_red"; minute: number; injury_time: number | null; team_id: number; player_name: string; assist_name: string | null; own_goal: boolean; counts: boolean };
 // §i18n the crowd split carries the call in pieces as well as in English, so the app can say it
@@ -26,7 +26,7 @@ export const listedCards = async () =>
 export const getCardsForMatch = async (matchId: number) =>
   must<Card[]>(supabase.from("cards").select("*, crews(name)").eq("match_id", matchId).or(await listedCards()));
 export const getEntries = (cardId: string) =>
-  must<Entry[]>(supabase.from("entries").select("*, calls(*), profiles:user_id(display_name, icon)").eq("card_id", cardId).order("points", { ascending: false }));
+  must<Entry[]>(supabase.from("entries").select("*, calls(*), profiles:user_id(display_name, icon, avatar_path)").eq("card_id", cardId).order("points", { ascending: false }));
 export const getMyEntry = (cardId: string, userId: string) =>
   must<Entry | null>(supabase.from("entries").select("*, calls(*)").eq("card_id", cardId).eq("user_id", userId).maybeSingle());
 export const getSquads = (homeId: number, awayId: number) =>

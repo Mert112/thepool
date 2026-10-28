@@ -1,15 +1,17 @@
 // §5.8 Profile: season points, overall rank, cards, hit rate, streak, points by competition,
 // and the full prediction history — every card played, with each call and whether it hit or missed.
+// Your picture and your settings live here too: the header picture opens this page.
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { claimPrize, myLedger, myStats } from "../features/economy/api";
-import { myHistory, myIcons, refreshIcons, setIcon, type HistoryCall, type HistoryCard, type IconRow } from "../features/profile/api";
+import { myHistory, myIcons, refreshIcons, removeAvatar, setIcon, uploadAvatar, type HistoryCall, type HistoryCard, type IconRow } from "../features/profile/api";
 import { PhoneDialog } from "../features/economy/PhoneDialog";
 import { useAuth, useLoad } from "../lib/auth";
 import { labelOf } from "../features/card/calls";
 import { useI18n, type Dict } from "../lib/i18n";
 import { AdModal } from "../features/ads/AdModal";
-import { Bar, ErrorBox, Spinner } from "../components/ui";
+import { Avatar, Bar, ErrorBox, Spinner } from "../components/ui";
+import { SettingsPanels } from "./Settings";
 
 const STATE: Record<HistoryCall["result"], keyof Dict["live"]["state"]> = {
   hit: "hit", miss: "miss", void: "void", pending: "open",
@@ -19,13 +21,15 @@ const STATE_CLS: Record<HistoryCall["result"], string> = {
 };
 
 export default function Profile() {
-  const { profile, refreshProfile } = useAuth();
+  const { session, profile, refreshProfile } = useAuth();
   const { t, fmt } = useI18n();
   const [ads, setAds] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimErr, setClaimErr] = useState<string | null>(null);
   const [phone, setPhone] = useState(false);
   const [iconErr, setIconErr] = useState<string | null>(null);
+  const [picBusy, setPicBusy] = useState(false);
+  const [picErr, setPicErr] = useState<string | null>(null);
   const { data, error, loading, reload } = useLoad(async () => {
     await refreshIcons();   // pick up anything earned since the last visit
     const [stats, history, ledger, icons] = await Promise.all([myStats(), myHistory(60), myLedger(12), myIcons()]);
@@ -49,14 +53,33 @@ export default function Profile() {
     setClaiming(false);
   };
   const refresh = () => { refreshProfile(); reload(); };
+  const pic = async (job: () => Promise<void>) => {
+    setPicBusy(true); setPicErr(null);
+    try { await job(); await refreshProfile(); } catch (e: any) { setPicErr(e.message ?? String(e)); }
+    setPicBusy(false);
+  };
+  const old = profile?.avatar_path ?? null;
 
   return (
     <div className="grid two">
       <div className="stack">
         <div className="panel">
           <div className="eyebrow">{t.profile.you}</div>
-          <h1 className="display" style={{ margin: "6px 0 10px" }}>{profile?.display_name ?? t.common.player}</h1>
-          <div className="muted">{s.rank ? t.profile.rank(fmt.ord(s.rank), s.players) : t.profile.noRank} <Link to="/settings" className="lime small">{t.shell.settings}</Link></div>
+          <div className="row-of" style={{ gap: 14, margin: "6px 0 10px" }}>
+            <span className="av-lg"><Avatar name={profile?.display_name} icon={profile?.icon} pic={profile?.avatar_path} me={!profile?.icon} /></span>
+            <div>
+              <h1 className="display" style={{ margin: 0 }}>{profile?.display_name ?? t.common.player}</h1>
+              <div className="row-of" style={{ marginTop: 6 }}>
+                <label className={"btn tiny-btn" + (picBusy ? " disabled" : "")}>
+                  {picBusy ? t.common.loading : old ? t.profile.picChange : t.profile.picUpload}
+                  <input type="file" accept="image/*" hidden disabled={picBusy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) pic(() => uploadAvatar(session!.user.id, f, old)); }} />
+                </label>
+                {old && <button className="btn ghost tiny-btn" disabled={picBusy} onClick={() => pic(() => removeAvatar(old))}>{t.profile.picRemove}</button>}
+              </div>
+            </div>
+          </div>
+          <ErrorBox msg={picErr} />
+          <div className="muted">{s.rank ? t.profile.rank(fmt.ord(s.rank), s.players) : t.profile.noRank} <a href="#settings" className="lime small">{t.shell.settings}</a></div>
           <div className="tiles" style={{ marginTop: 16 }}>
             <div className="tile"><div className="v">{fmt.pts(balance)}</div><div className="k">{t.profile.pointsHeld}</div></div>
             <div className="tile"><div className="v">{s.rank ? fmt.ord(s.rank) : "–"}</div><div className="k">{t.profile.overall}</div></div>
@@ -149,6 +172,7 @@ export default function Profile() {
         </div>
       </div>
       {ads && <AdModal onClose={() => { setAds(false); refresh(); }} onCredited={refresh} reward={s.ad_reward} />}
+      <div style={{ gridColumn: "1 / -1" }}><SettingsPanels /></div>
     </div>
   );
 }

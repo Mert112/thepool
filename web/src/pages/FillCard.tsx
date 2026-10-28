@@ -1,7 +1,7 @@
 // §5.4 Filling the card: every market on one screen, a stake on each call, a running slip.
 //
 // Points are a currency, and the pot is all there is to win (0021). Every stake on a call goes
-// into one pot for that card; at full time a void leaves it, the house rakes 10%, and the rest —
+// into one pot for that card; at full time a void leaves it, and all the rest —
 // plus any jackpot carried in — is split among the right answers in proportion to their stakes.
 // So what a pick is worth is not a fixed number: it is what the rest of the room has done.
 //
@@ -105,7 +105,7 @@ export default function FillCard() {
     const others = (rowsOf(ct)[0]?.pot ?? 0) - (saved?.stake ?? 0);
     const onKey = (rowsOf(ct).find((p) => p.key === key)?.pick_stake ?? 0) - (saved && keyOf(saved) === key ? saved.stake ?? 0 : 0);
     const pot = others + mine;
-    return { pot, purse: Math.floor(pot * 0.9 * 100) / 100 + jackpotOf(ct), pickStake: onKey + mine };
+    return { pot, purse: pot + jackpotOf(ct), pickStake: onKey + mine };
   };
   const potNow = (ct: CallType) => { const c = picks[ct]; return c ? split(ct, keyOf(c)).pot : (rowsOf(ct)[0]?.pot ?? 0) - (savedOf(ct)?.stake ?? 0); };
   // the key card_pots() builds for a pick, so an option can look up its own price

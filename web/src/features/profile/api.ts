@@ -4,9 +4,9 @@ import type { Lang } from "../../lib/i18n/lang";
 import type { Card, CallType } from "../card/api";
 import type { Parts } from "../card/calls";
 
-export type Profile = { id: string; display_name: string | null; streak: number; balance: number; icon: string; language: Lang | null };
+export type Profile = { id: string; display_name: string | null; streak: number; balance: number; icon: string; language: Lang | null; avatar_path: string | null };
 export const getProfile = (userId: string) =>
-  must<Profile | null>(supabase.from("profiles").select("id, display_name, streak, balance, icon, language").eq("id", userId).maybeSingle());
+  must<Profile | null>(supabase.from("profiles").select("id, display_name, streak, balance, icon, language, avatar_path").eq("id", userId).maybeSingle());
 export const setDisplayName = (name: string) => must<void>(supabase.rpc("rpc_set_display_name", { p_name: name }));
 // §i18n the choice follows the player, so the mails match the screen
 export const setLanguage = (lang: Lang) => must<void>(supabase.rpc("rpc_set_language", { p_lang: lang }));
@@ -35,3 +35,26 @@ export const getStickers = () => must<Array<{ competition_code: string; season: 
 export type Settings = { new_card: boolean; deadline_reminder: boolean; crew_activity: boolean; result: boolean; weekly_digest: boolean; watched_competitions: string[] };
 export const getSettings = (userId: string) => must<Settings>(supabase.from("notification_settings").select("*").eq("user_id", userId).single());
 export const saveSettings = (userId: string, s: Partial<Settings>) => must<void>(supabase.from("notification_settings").update(s).eq("user_id", userId));
+
+// §0031 a picture: cropped square and shrunk to 256px in the browser, uploaded into the player's
+// own folder, then made theirs. The one it replaces is deleted; a failed delete only leaves a file.
+export async function uploadAvatar(uid: string, file: File, old: string | null) {
+  const blob = await squareJpeg(file, 256);
+  const path = `${uid}/${Date.now()}.jpg`;
+  const { error } = await supabase.storage.from("avatars").upload(path, blob, { contentType: "image/jpeg" });
+  if (error) throw new Error(error.message);
+  await must<void>(supabase.rpc("rpc_set_avatar", { p_path: path }));
+  if (old) await supabase.storage.from("avatars").remove([old]);
+}
+export async function removeAvatar(old: string) {
+  await must<void>(supabase.rpc("rpc_set_avatar", { p_path: null }));
+  await supabase.storage.from("avatars").remove([old]);
+}
+async function squareJpeg(file: File, size: number): Promise<Blob> {
+  const img = await createImageBitmap(file).catch(() => { throw new Error("That file is not a picture"); });
+  const s = Math.min(img.width, img.height);
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  c.getContext("2d")!.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
+  return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error("That file is not a picture"))), "image/jpeg", 0.85));
+}

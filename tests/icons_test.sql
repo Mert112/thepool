@@ -221,5 +221,23 @@ do $$ begin
   assert has_column_privilege('authenticated', 'pool.profiles', 'icon', 'update') = false, 'nor set the column directly';
 end $$;
 
+-- --- 16. an uploaded picture (0031): only from your own folder, and only through the RPC ------------
+do $$ declare ana text := '11111111-aaaa-0000-0000-000000000001'; begin
+  perform test_as(ana);
+  begin perform rpc_set_avatar('22222222-bbbb-0000-0000-000000000002/1.jpg'); raise exception 'Ana wore Ben''s picture';
+  exception when others then if sqlerrm not like '%your own folder%' then raise; end if; end;
+  begin perform rpc_set_avatar(ana || '/../x.jpg'); raise exception 'a path escaped the folder';
+  exception when others then if sqlerrm not like '%your own folder%' then raise; end if; end;
+  perform rpc_set_avatar(ana || '/1730000000000.jpg');
+  assert (select avatar_path from leaderboard('overall') where user_id = ana::uuid) = ana || '/1730000000000.jpg',
+    'the table carries the picture';
+  perform rpc_set_avatar(null);
+  assert (select avatar_path from profiles where id = ana::uuid) is null, 'and it can be taken off';
+  perform test_reset();
+  assert has_column_privilege('authenticated', 'pool.profiles', 'avatar_path', 'select'), 'everybody sees the picture';
+  assert has_column_privilege('authenticated', 'pool.profiles', 'avatar_path', 'update') = false, 'nobody sets it directly';
+  assert has_function_privilege('anon', 'pool.rpc_set_avatar(text)', 'execute') = false, 'and a visitor cannot call the RPC';
+end $$;
+
 select 'ICONS TESTS PASSED' as result;
 rollback;

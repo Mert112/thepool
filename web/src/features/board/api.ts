@@ -15,9 +15,9 @@ export type BoardRow = {
   odds: Odds;
 };
 
-// two days back to a week out, paged past the API's 1000-row cap
+// a week back (the Settled tab) to a week out, paged past the API's 1000-row cap
 export async function getBoard(): Promise<BoardRow[]> {
-  const from = new Date(Date.now() - 2 * 86400000).toISOString();
+  const from = new Date(Date.now() - 7 * 86400000).toISOString();
   const to = new Date(Date.now() + 8 * 86400000).toISOString();
   const rows: BoardRow[] = [];
   for (let page = 0; page < 10; page++) {

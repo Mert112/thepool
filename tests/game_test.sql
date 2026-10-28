@@ -219,22 +219,22 @@ select process_match_updates();
 do $$ declare e uuid := tv('mina_entry')::uuid; t uuid; begin
   select id into t from entries where card_id = tv('card_id')::uuid and user_id = '22222222-2222-2222-2222-222222222222';
   assert (select status from cards where id = tv('card_id')::uuid) = 'settled', 'card settled';
-  -- six pots, each 90% of what went in. The result 20 -> 18 to Mina alone; the scoreline 5 -> 4.5;
-  -- the scorer 15 -> 13.5 split 10:5 as 9 and 4.5; the assist 5 -> 4.5; the yellow 4 -> 3.6 split
-  -- evenly as 1.8 each; the red 1 -> 0.9. Mina takes 38.70 on 33 staked.
-  assert (select points from entries where id = e) = 5.7, format('Mina points %s', (select points from entries where id = e));
+  -- six pots, each paid out in full (0031). The result 20 to Mina alone; the scoreline 5; the
+  -- scorer 15 split 10:5; the assist 5; the yellow 4 split evenly as 2 each; the red 1.
+  -- Mina takes 43 on 33 staked.
+  assert (select points from entries where id = e) = 10, format('Mina points %s', (select points from entries where id = e));
   assert (select hits from entries where id = e) = 6, 'Mina 6 of 6';
-  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 100 - 33 + 38.7, 'Mina is paid';
-  assert (select points_awarded from calls where entry_id = e and call_type = 'scorer') = 9, 'the scorer pot split 10:5';
-  -- Tobias: the draw loses its 10, and he shares the scorer and yellow pots — 6.30 back on 17
-  assert (select points from entries where id = t) = -10.7, format('Tobias points %s', (select points from entries where id = t));
+  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 100 - 33 + 43, 'Mina is paid';
+  assert (select points_awarded from calls where entry_id = e and call_type = 'scorer') = 10, 'the scorer pot split 10:5';
+  -- Tobias: the draw loses its 10, and he shares the scorer and yellow pots — 7 back on 17
+  assert (select points from entries where id = t) = -10, format('Tobias points %s', (select points from entries where id = t));
   assert (select result from calls where entry_id = t and call_type = 'winner') = 'miss', 'a wrong call is a wrong call';
   assert (select points_awarded from calls where entry_id = t and call_type = 'winner') = 0, 'and returns nothing';
-  assert (select points_awarded from calls where entry_id = t and call_type = 'scorer') = 4.5, 'but he had a third of the scorer pot';
-  assert (select balance from profiles where id = '22222222-2222-2222-2222-222222222222') = 100 - 17 + 6.3, 'Tobias is paid';
-  -- somebody landed every call on this card, so nothing rolled forward; the house took its 10%
+  assert (select points_awarded from calls where entry_id = t and call_type = 'scorer') = 5, 'but he had a third of the scorer pot';
+  assert (select balance from profiles where id = '22222222-2222-2222-2222-222222222222') = 100 - 17 + 7, 'Tobias is paid';
+  -- somebody landed every call on this card, so nothing rolled forward; the house takes nothing
   assert (select coalesce(sum(amount), 0) from jackpots) = 0, 'no jackpot from a card where everything landed';
-  assert (select coalesce(sum(amount), 0) from ledger where reason = 'house') = 5, 'the house took 5.00 across six pots';
+  assert (select coalesce(sum(amount), 0) from ledger where reason = 'house') = 0, 'the house took nothing from six pots';
   -- ET goal did not count against anything
   assert (select count(*) from match_events where match_id = 1000 and not counts) = 1, 'ET event excluded';
   -- stickers: one per (competition, season, call type)
@@ -264,9 +264,9 @@ select process_match_updates();
 do $$ begin
   assert (select result from calls c join entries e on e.id = c.entry_id where e.card_id = tv('card2_id')::uuid and call_type = 'winner') = 'miss', 'a side loses to a draw';
   assert (select points from entries where card_id = tv('card2_id')::uuid) = -15, 'a blank card costs what it staked';
-  -- and a blank card is exactly what feeds the jackpot: 10 and 5 lost, less the 10% rake
-  assert jackpot_of('PL', 'winner') = 9, format('the result jackpot is 9, not %s', jackpot_of('PL', 'winner'));
-  assert jackpot_of('PL', 'scorer') = 4.5, format('the scorer jackpot is 4.50, not %s', jackpot_of('PL', 'scorer'));
+  -- and a blank card is exactly what feeds the jackpot: the 10 and 5 lost, whole
+  assert jackpot_of('PL', 'winner') = 10, format('the result jackpot is 10, not %s', jackpot_of('PL', 'winner'));
+  assert jackpot_of('PL', 'scorer') = 5, format('the scorer jackpot is 5, not %s', jackpot_of('PL', 'scorer'));
   -- streak: same matchday, Mina landed on the other card that day → still 1
   assert (select streak from profiles where id = '11111111-1111-1111-1111-111111111111') = 1, 'streak survives';
 end $$;
@@ -279,12 +279,12 @@ do $$ declare e uuid := tv('mina_entry')::uuid; begin
   assert (select result from calls where entry_id = e and call_type = 'assist') = 'miss', 'correction: assist now missed';
   -- the pot was divided and paid when the card settled, and a pot is not un-divided: the share
   -- stays with Mina and the card's number stays where the balance did (0021)
-  assert (select points from entries where id = e) = 5.7, format('corrected points %s', (select points from entries where id = e));
-  assert (select points_awarded from calls where entry_id = e and call_type = 'assist') = 4.5, 'the share she was paid stands';
+  assert (select points from entries where id = e) = 10, format('corrected points %s', (select points from entries where id = e));
+  assert (select points_awarded from calls where entry_id = e and call_type = 'assist') = 5, 'the share she was paid stands';
   assert (select hits from entries where id = e) = 5, 'but it no longer counts as a hit';
-  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 100 - 33 + 38.7 - 15, 'the balance is untouched by the correction';
+  assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111') = 100 - 33 + 43 - 15, 'the balance is untouched by the correction';
   assert jackpot_of('PL', 'assist') = 0, format('the assist pot is not re-decided, got %s', jackpot_of('PL', 'assist'));
-  assert jackpot_of('PL', 'winner') = 9, 'and the standing jackpots are untouched by it';
+  assert jackpot_of('PL', 'winner') = 10, 'and the standing jackpots are untouched by it';
   assert (select balance from profiles where id = '11111111-1111-1111-1111-111111111111')
        = (select sum(amount) from ledger where user_id = '11111111-1111-1111-1111-111111111111'), 'the ledger is the balance';
   assert (select status from cards where id = tv('card_id')::uuid) = 'settled', 'disputed → settled';
@@ -308,16 +308,15 @@ end $$;
 do $$ begin
   perform test_as('11111111-1111-1111-1111-111111111111');
   -- the overall table is a rich list, and in a zero-sum game the person who never played is top:
-  -- Mina won five of her six calls and is still down, because the house takes 10% of every pot
-  -- and her second card was blank
+  -- Mina won five of her six calls and is still down, because her second card was blank
   assert (select user_id from leaderboard('overall') limit 1) = '33333333-3333-3333-3333-333333333333', 'the richest never played';
   assert (select balance from leaderboard('overall') limit 1) = 100, 'Celine still holds her whole start';
-  assert (select balance from leaderboard('overall') offset 1 limit 1) = 90.7, 'Mina is second on 90.70';
-  assert (select points from leaderboard('overall') offset 1 limit 1) = 5.7 - 15, 'with what her settled cards were worth';
+  assert (select balance from leaderboard('overall') offset 1 limit 1) = 95, 'Mina is second on 95';
+  assert (select points from leaderboard('overall') offset 1 limit 1) = 10 - 15, 'with what her settled cards were worth';
   assert (select display_name from leaderboard('crew', tv('crew_id')) limit 1) = 'Mina', 'crew table';
   assert (my_stats()->>'rank')::int = 2, 'my rank';
-  assert (my_stats()->>'balance')::numeric = 90.7, 'my balance';
-  assert crew_score(tv('crew_id')::uuid) = 5.7 - 10.7 - 15, format('crew score %s', crew_score(tv('crew_id')::uuid));
+  assert (my_stats()->>'balance')::numeric = 95, 'my balance';
+  assert crew_score(tv('crew_id')::uuid) = 10 - 10 - 15, format('crew score %s', crew_score(tv('crew_id')::uuid));
   perform test_reset();
 end $$;
 

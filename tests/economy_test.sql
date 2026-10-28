@@ -1,4 +1,4 @@
--- The point economy (0019–0021): balances, stakes, pari-mutuel pots, the rake, refunds, the
+-- The point economy (0019–0021, 0031): balances, stakes, pari-mutuel pots, refunds, the
 -- ledger, rewarded ads, the prize — and the conservation law that says nothing is ever minted.
 -- Run on a fresh db after the migrations:  psql pool -f tests/economy_test.sql
 -- Every check raises on failure; a clean run prints "ECONOMY TESTS PASSED".
@@ -148,10 +148,10 @@ do $$ declare card uuid := (select id from cards where match_id = 9000); p recor
   select * into p from card_pots(card) where call_type = 'winner' and key = '9001';
   assert p.pot = 25, format('the result pot is 25, not %s', p.pot);
   assert p.pick_stake = 10, 'Rovers carries 10 of it';
-  assert p.purse = 22.5, format('the purse is 22.50, not %s', p.purse);
-  assert p.per_point = 2.25, format('a point on Rovers returns 2.25, not %s', p.per_point);
+  assert p.purse = 25, format('the purse is the whole 25 (0031), not %s', p.purse);
+  assert p.per_point = 2.5, format('a point on Rovers returns 2.50, not %s', p.per_point);
   select * into p from card_pots(card) where call_type = 'winner' and key = '9002';
-  assert p.per_point = 1.5, format('a point on Athletic returns 1.50, not %s', p.per_point);
+  assert p.per_point = 1.66, format('a point on Athletic returns 1.66, not %s', p.per_point);
 end $$;
 
 -- --- 4b. no pot cap (0028): anything up to what you have free, even into an empty pot --------------
@@ -172,7 +172,7 @@ do $$ begin
   perform assert_conserved('locked, nothing settled');
 end $$;
 
--- --- 6. the pot pays: a 10% rake, the rest split by stake, a void refunded in full --------------
+-- --- 6. the pot pays in full (0031), split by stake, a void refunded in full ----------------------
 insert into player_stats values (9000, 90011, 'app', 1), (9000, 90021, 'app', 1);   -- Pires never came on
 insert into match_events (match_id, type, minute, team_id, player_id, provider_key) values
   (9000, 'goal', 20, 9001, 90011, 'g1'), (9000, 'goal', 55, 9001, 90011, 'g2'), (9000, 'goal', 70, 9002, 90021, 'g3');
@@ -180,38 +180,38 @@ select finish(9000, 2, 1);
 do $$ begin
   assert res('11111111-aaaa-0000-0000-000000000001', 9000, 'winner') = 'hit', 'Rovers won it';
   assert res('11111111-aaaa-0000-0000-000000000001', 9000, 'scorer') = 'void', 'Pires never came on';
-  -- the result: pot 25, rake 2.50, 22.50 to Ana alone. The scoreline: pot 10, rake 1.00, 9.00 to Ana.
-  assert house() = 3.5, format('the house took 2.50 and 1.00, not %s', house());
+  -- the result: pot 25, all of it to Ana alone. The scoreline: pot 10, all to Ana. No house cut.
+  assert house() = 0, format('the house takes nothing, not %s', house());
   assert (select points_awarded from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
-          where c.match_id = 9000 and k.call_type = 'winner' and e.user_id = '11111111-aaaa-0000-0000-000000000001') = 22.5, 'the result paid 22.50';
+          where c.match_id = 9000 and k.call_type = 'winner' and e.user_id = '11111111-aaaa-0000-0000-000000000001') = 25, 'the result paid 25';
   assert (select points_awarded from calls k join entries e on e.id = k.entry_id join cards c on c.id = e.card_id
-          where c.match_id = 9000 and k.call_type = 'score' and e.user_id = '11111111-aaaa-0000-0000-000000000001') = 9, 'the scoreline paid 9.00';
-  -- a void is refunded in full and never enters the pot, so no rake is taken on it
+          where c.match_id = 9000 and k.call_type = 'score' and e.user_id = '11111111-aaaa-0000-0000-000000000001') = 10, 'the scoreline paid 10';
+  -- a void is refunded in full and never enters the pot
   assert (select coalesce(sum(amount),0) from ledger where reason = 'refund' and user_id = '11111111-aaaa-0000-0000-000000000001') = 5, 'the void came back whole';
-  assert bal('11111111-aaaa-0000-0000-000000000001') = 80 + 22.5 + 9 + 5, format('Ana is on %s', bal('11111111-aaaa-0000-0000-000000000001'));
+  assert bal('11111111-aaaa-0000-0000-000000000001') = 80 + 25 + 10 + 5, format('Ana is on %s', bal('11111111-aaaa-0000-0000-000000000001'));
   assert bal('22222222-bbbb-0000-0000-000000000002') = 80, 'Ben got nothing back';
-  assert pts('11111111-aaaa-0000-0000-000000000001', 9000) = 16.5, format('Ana''s card is worth %s', pts('11111111-aaaa-0000-0000-000000000001', 9000));
+  assert pts('11111111-aaaa-0000-0000-000000000001', 9000) = 20, format('Ana''s card is worth %s', pts('11111111-aaaa-0000-0000-000000000001', 9000));
   assert pts('22222222-bbbb-0000-0000-000000000002', 9000) = -20, 'Ben''s card cost him 20';
   assert inflight() = 0, 'nothing is left riding';
   perform assert_conserved('the first card settled');
 end $$;
 
--- --- 7. alone and right still pays the rake ------------------------------------------------------
+-- --- 7. alone and right gets the stake back whole --------------------------------------------------
 select play(:'C', 9100, '[{"call_type":"winner","team_id":9001,"stake":10}]');
 select kickoff(9100); select finish(9100, 1, 0);
 do $$ begin
   assert res('33333333-cccc-0000-0000-000000000003', 9100, 'winner') = 'hit', 'Cem was right';
-  assert bal('33333333-cccc-0000-0000-000000000003') = 99, format('and got 9.00 of his 10 back: %s', bal('33333333-cccc-0000-0000-000000000003'));
-  assert pts('33333333-cccc-0000-0000-000000000003', 9100) = -1, 'the only player in a pot pays the rake on himself';
+  assert bal('33333333-cccc-0000-0000-000000000003') = 100, format('and got all 10 back: %s', bal('33333333-cccc-0000-0000-000000000003'));
+  assert pts('33333333-cccc-0000-0000-000000000003', 9100) = 0, 'the only player in a pot breaks even';
   perform assert_conserved('a one-player pot');
 end $$;
 
--- --- 8. nobody correct: the 90% rolls into the competition's jackpot ------------------------------
+-- --- 8. nobody correct: the whole pot rolls into the competition's jackpot -------------------------
 select play(:'A', 9400, '[{"call_type":"winner","team_id":9002,"stake":5}]');
 select play(:'B', 9400, '[{"call_type":"winner","team_id":9002,"stake":5}]');
 select kickoff(9400); select finish(9400, 1, 0);
 do $$ begin
-  assert jackpot_of('PL', 'winner') = 9, format('10 staked, 1 raked, 9 rolled — got %s', jackpot_of('PL', 'winner'));
+  assert jackpot_of('PL', 'winner') = 10, format('10 staked, 10 rolled — got %s', jackpot_of('PL', 'winner'));
   perform assert_conserved('a pot nobody won');
 end $$;
 
@@ -231,12 +231,12 @@ end $$;
 -- --- 10. a match called off before it starts hands the stakes back ---------------------------------
 select play(:'C', 9300, '[{"call_type":"winner","team_id":9001,"stake":5}]');
 select kickoff(9300);
-do $$ begin assert bal('33333333-cccc-0000-0000-000000000003') = 94, 'staked at kick-off'; end $$;
+do $$ begin assert bal('33333333-cccc-0000-0000-000000000003') = 95, 'staked at kick-off'; end $$;
 update matches set utc_date = now() + interval '2 days', status = 'POSTPONED' where id = 9300;
 select sync_card_status();
 do $$ begin
   assert (select status from cards where match_id = 9300) = 'open', 'the card reopened';
-  assert bal('33333333-cccc-0000-0000-000000000003') = 99, 'and the stake came back';
+  assert bal('33333333-cccc-0000-0000-000000000003') = 100, 'and the stake came back';
   perform assert_conserved('a postponed match');
 end $$;
 

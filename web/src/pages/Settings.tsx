@@ -1,5 +1,6 @@
 // §5.8 / §7 Settings: display name, language, notification toggles (all off-switchable), and
-// "My leagues" — the leagues you follow, each with a bell for the new-card mail
+// "My leagues" — the leagues you follow, each with a bell for the new-card mail. Not a page of its
+// own any more: these panels sit at the foot of "You", which is where the header picture goes
 import { useEffect, useState } from "react";
 import { getSettings, saveSettings, setDisplayName, type Settings as S } from "../features/profile/api";
 import { useAuth, useLoad } from "../lib/auth";
@@ -10,7 +11,7 @@ import { LeaguesDialog } from "../features/board/LeaguesDialog";
 
 const KEYS: Array<keyof S> = ["new_card", "deadline_reminder", "crew_activity", "result", "weekly_digest"];
 
-export default function Settings() {
+export function SettingsPanels() {
   const { session, profile, refreshProfile } = useAuth();
   const { t } = useI18n();
   const uid = session!.user.id;
@@ -38,7 +39,7 @@ export default function Settings() {
   const saveName = async () => { try { await setDisplayName(name); await refreshProfile(); setSavedName(true); } catch (e: any) { setErr(e.message); } };
 
   return (
-    <div className="grid two">
+    <div className="grid two" id="settings">
       <div className="stack">
         <div className="panel">
           <h2 className="display">{t.settings.notifications}</h2>

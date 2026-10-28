@@ -21,8 +21,11 @@ export const ICON_RARITY: Record<string, string> = {
   sniper: "rare", banker: "rare", jackpot: "epic", whale: "epic", console: "legendary",
 };
 
-export function Avatar({ name, icon, me, sm }: { name: string | null | undefined; icon?: string | null; me?: boolean; sm?: boolean }) {
+// an uploaded picture (0031) wins over the icon, which wins over initials
+export const avatarUrl = (path: string) => supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
+export function Avatar({ name, icon, pic, me, sm }: { name: string | null | undefined; icon?: string | null; pic?: string | null; me?: boolean; sm?: boolean }) {
   const { t } = useI18n();
+  if (pic) return <img className={"av pic" + (sm ? " sm" : "")} src={avatarUrl(pic)} alt="" title={name ?? undefined} />;
   const glyph = icon ? ICON_GLYPH[icon] : undefined;
   const cls = "av" + (me ? " me" : "") + (sm ? " sm" : "") + (glyph ? ` ico r-${ICON_RARITY[icon!] ?? "common"}` : "");
   return <span className={cls} title={glyph ? undefined : (name ?? undefined)}>{glyph ?? (me ? t.common.you.slice(0, 2).toUpperCase() : initials(name))}</span>;
@@ -114,7 +117,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {adsOn && <button className="btn ghost tiny-btn" onClick={() => setAds(true)}>{t.shell.getPoints}</button>}
           {profile && profile.streak > 0 && <span className="tag hit">{t.shell.streak(profile.streak)}</span>}
           <LangPicker />
-          <Link to="/settings" title={t.shell.settings}><Avatar name={profile?.display_name} icon={profile?.icon} me={!profile?.icon} /></Link>
+          <Link to="/you" title={t.nav.you}><Avatar name={profile?.display_name} icon={profile?.icon} pic={profile?.avatar_path} me={!profile?.icon} /></Link>
           <button className="btn ghost tiny-btn" onClick={() => supabase.auth.signOut()}>{t.shell.signOut}</button>
         </div>
       </div>

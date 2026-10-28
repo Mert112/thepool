@@ -15,7 +15,7 @@ export async function getCardPots(cardId: string): Promise<PotRow[]> {
   return rows.map((r) => ({ ...r, pick_stake: Number(r.pick_stake), pot: Number(r.pot), jackpot: Number(r.jackpot),
     purse: Number(r.purse), per_point: Number(r.per_point) })) as PotRow[];
 }
-// §1 what a card nobody landed rolled forward on each call type, less the rake
+// §1 what a card nobody landed rolled forward on each call type
 export async function getJackpots(competition: string): Promise<Partial<Record<CallType, number>>> {
   const rows = await must<Array<{ call_type: CallType; amount: number }>>(
     supabase.from("jackpots").select("call_type, amount").eq("competition_code", competition).gt("amount", 0), []);
@@ -26,7 +26,7 @@ export const myCommittedStake = async () => Number(await must<number | null>(sup
 export type LedgerRow = { amount: number; reason: "signup" | "adjustment" | "stake" | "pot" | "jackpot" | "refund" | "ad_reward" | "prize"; created_at: string };
 export const myLedger = (limit = 30) => must<LedgerRow[]>(supabase.rpc("my_ledger", { p_limit: limit }), []);
 
-export type LbRow = { user_id: string; display_name: string | null; icon: string; balance: number; points: number; points_prev: number; cards: number; hits: number; calls: number; hit_rate: number; best_call: CallType | null; best_points: number | null };
+export type LbRow = { user_id: string; display_name: string | null; icon: string; balance: number; points: number; points_prev: number; cards: number; hits: number; calls: number; hit_rate: number; best_call: CallType | null; best_points: number | null; avatar_path: string | null };
 export const leaderboard = (scope: "overall" | "competition" | "crew" | "week", key?: string) =>
   must<LbRow[]>(supabase.rpc("leaderboard", { p_scope: scope, p_key: key ?? null }), []);
 

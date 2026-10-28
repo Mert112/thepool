@@ -148,7 +148,7 @@ export const tr: Dict = {
     noFixture: "Maç bulunamadı.",
     locksIn: (t: string) => `${t} sonra kilitlenir · o ana kadar istediğin kadar değiştir`,
     locked: "Bu kupon kilitli.",
-    rules: "Her tahminin bir yatırımı var, tek puandan başlıyor, ve bir tahmine yatan her puan tek bir pota giriyor. Maç başlayana kadar bakiyenden bir şey çıkmaz. Maç sonunda geçersiz tahminler tam iade edilir, kasa kalanın %10'unu alır, geri kalanı doğru bilenler arasında yatırdıkları oranında paylaşılır — yani bir tahmin, üzerinde ne kadar az kişi varsa o kadar değerli. Geçen sefer kimsenin bilemediği tahminde kaybedilen puanlar da buraya jackpot olarak taşınır.",
+    rules: "Her tahminin bir yatırımı var, tek puandan başlıyor, ve bir tahmine yatan her puan tek bir pota giriyor. Maç başlayana kadar bakiyenden bir şey çıkmaz. Maç sonunda geçersiz tahminler tam iade edilir, pottaki her şey doğru bilenler arasında yatırdıkları oranında paylaşılır — yani bir tahmin, üzerinde ne kadar az kişi varsa o kadar değerli. Geçen sefer kimsenin bilemediği tahminde kaybedilen puanlar da buraya jackpot olarak taşınır.",
     notSaved: "Kaydedilmedi.",
     notSavedInline: (msg: string) => `Kaydedilmedi — ${msg}`,
     savedWithdrawn: "Kuponun geri çekildi — bu maçta tahminin kalmadı.",
@@ -241,6 +241,7 @@ export const tr: Dict = {
     settledUp: (amount: string) => ` Biten bütün kuponlarda ${amount} puan kârdasın.`,
     settledDown: (amount: string) => ` Biten bütün kuponlarda ${amount} puan zarardasın.`,
     settledLevel: " Biten bütün kuponlarda başa baştasın.",
+    picUpload: "Fotoğraf yükle", picChange: "Fotoğrafı değiştir", picRemove: "Kaldır",
     yourIcon: "Simgen",
     unlocked: (have: number, of: number) => `${of} simgenin ${have} tanesi açık`,
     iconBlurb: "Bunların dokuzu kazanılıyor ve iş ne kadar zorsa simge o kadar nadir. Açtığın birine dokunarak tak.",
@@ -547,6 +548,7 @@ export const tr: Dict = {
   } as Record<string, { name: string; how: string }>,
 
   errors: {
+    "That file is not a picture": "Bu dosya bir resim değil — JPG ya da PNG dene.",
     "Verify your phone number before your first claim.": "İlk talebinden önce telefon numaranı doğrula.",
     "Phone verification is switched off right now.": "Telefon doğrulama şu an kapalı.",
     "Phone verification is not set up yet.": "Telefon doğrulama henüz kurulmadı.",
